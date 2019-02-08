@@ -58,6 +58,76 @@ meta def role.to_format : role → format -- Probably decide how to print a form
 meta instance : has_to_format role := -- What is this for?
 ⟨role.to_format⟩
 
+-- Check whether a folterm is a constant expression or not (does it contain a variable or not?)
+meta def folterm.is_const : folterm → bool
+| (folterm.const _) := tt
+| (folterm.lconst _ _) := tt
+| (folterm.prf) := tt
+| (folterm.var _) := ff
+| (folterm.app t u) := t.is_const && u.is_const
+
+meta def folterm.is_eq : folterm → folterm → bool 
+| (folterm.const n1) (folterm.const n2) := (n1 = n2)
+| (folterm.const _) _ := ff 
+| (folterm.lconst n1 l1) (folterm.lconst n2 l2) := (n1 = n2) && (l1 = l2)
+| (folterm.lconst _ _) _ := ff
+| (folterm.prf) (folterm.prf) := tt
+| (folterm.prf) _ := ff
+| (folterm.var n1) (folterm.var n2) := (n1 = n2)
+| (folterm.var _) _ := ff
+| (folterm.app t1 u1) (folterm.app t2 u2) := (t1.is_eq t2) && (u1.is_eq u2)
+| (folterm.app _ _) _ := ff 
+
+meta def folterm.is_eq_besides_vars : folterm → folterm → bool
+| (folterm.var _) _ := tt
+| _ (folterm.var _) := tt
+| (folterm.const n1) (folterm.const n2) := (n1 = n2)
+| (folterm.const _) _ := ff 
+| (folterm.lconst n1 l1) (folterm.lconst n2 l2) := (n1 = n2) && (l1 = l2)
+| (folterm.lconst _ _) _ := ff
+| (folterm.prf) (folterm.prf) := tt
+| (folterm.prf) _ := ff
+| (folterm.app t1 u1) (folterm.app t2 u2) := (t1.is_eq_besides_vars t2) && (u1.is_eq_besides_vars u2)
+| (folterm.app _ _) _ := ff 
+
+meta def folterm.replace : folterm → folterm → folterm → folterm
+| orig@(folterm.app t u) old_term new_term := if orig.is_eq old_term then new_term else folterm.app (folterm.replace t old_term new_term) (folterm.replace u old_term new_term)
+| orig old_term new_term := if orig.is_eq old_term then new_term else orig
+
+meta def folform.replace_term : folform → folterm → folterm → folform
+| orig@(folform.P t) old_term new_term := folform.P $ t.replace old_term new_term
+| orig@(folform.T t1 t2) old_term new_term := folform.T (t1.replace old_term new_term) (t2.replace old_term new_term)
+| orig@(folform.eq t1 t2) old_term new_term := folform.eq (t1.replace old_term new_term) (t2.replace old_term new_term)
+| orig@(folform.neg f) old_term new_term := folform.neg (f.replace_term old_term new_term)
+| orig@(folform.imp f1 f2) old_term new_term := folform.imp (f1.replace_term old_term new_term) (f2.replace_term old_term new_term)
+| orig@(folform.iff f1 f2) old_term new_term := folform.iff (f1.replace_term old_term new_term) (f2.replace_term old_term new_term)
+| orig@(folform.conj f1 f2) old_term new_term := folform.conj (f1.replace_term old_term new_term) (f2.replace_term old_term new_term)
+| orig@(folform.disj f1 f2) old_term new_term := folform.disj (f1.replace_term old_term new_term) (f2.replace_term old_term new_term)
+| orig@(folform.all n1 n2 f) old_term new_term := folform.all n1 n2 (f.replace_term old_term new_term)
+| orig@(folform.exist n1 n2 f) old_term new_term := folform.exist n1 n2 (f.replace_term old_term new_term)
+| orig _ _ := orig
+
+meta def folterm.get_all_const_terms : folterm → list folterm
+| c@(folterm.app t u) := if folterm.is_const c then [c] ++ t.get_all_const_terms ++ u.get_all_const_terms else t.get_all_const_terms ++ u.get_all_const_terms
+-- All other parts are not considered as constant as we are not interested in replacing a constant by another constant
+| (folterm.const _) := []
+| (folterm.lconst _ _) := []
+| (folterm.prf) := []
+| (folterm.var _) := []
+
+meta def folform.get_all_const_terms : folform → list folterm
+| orig@(folform.P t) := t.get_all_const_terms
+| orig@(folform.T t1 t2) := t1.get_all_const_terms ++ t2.get_all_const_terms
+| orig@(folform.eq t1 t2) := t1.get_all_const_terms ++ t2.get_all_const_terms
+| orig@(folform.neg f) := f.get_all_const_terms
+| orig@(folform.imp f1 f2) := f1.get_all_const_terms ++ f2.get_all_const_terms
+| orig@(folform.iff f1 f2) := f1.get_all_const_terms ++ f2.get_all_const_terms
+| orig@(folform.conj f1 f2) := f1.get_all_const_terms ++ f2.get_all_const_terms
+| orig@(folform.disj f1 f2) := f1.get_all_const_terms ++ f2.get_all_const_terms
+| orig@(folform.all n1 n2 f) := f.get_all_const_terms
+| orig@(folform.exist n1 n2 f) := f.get_all_const_terms
+| orig := []
+
  -- Retrieve a list of all free variables for a given formula, and return it as cartesian product (why as cartesian product?)
  -- Only looks at the name but not the type of the variable...
 meta def folform.to_format_collect_vars : folform → list name → (list name × folform)
@@ -238,13 +308,28 @@ folform.all `h1 `h1 $ folform.all `h2 `h2 $ -- folform.all `h3 `h3 $
       (folform.neg $ folform.eq (folterm.var 0) (folterm.var 1)) 
       (folform.eq (folterm.var 0) (folterm.var 1)) )
     (folform.imp
-      (folform.conj (folform.P $ folterm.var 0) (folform.disj (folform.P $ folterm.var 0) (folform.P $ folterm.var 1)))
+      (folform.conj (folform.P $ folterm.const "a") (folform.disj (folform.P $ folterm.var 0) (folform.P $ folterm.var 1)))
       (folform.T (folterm.var 0) (folterm.app (folterm.var 1) (folterm.var 0))))
 
 meta def example_formula2 : folform :=
 folform.imp (folform.conj (folform.P $ folterm.const "n") (folform.P $ folterm.const "a"))
-(folform.T (folterm.const "n") (folterm.app (folterm.const "n") (folterm.const("a"))))
+(folform.T (folterm.const "n") (folterm.app (folterm.const "n") (folterm.app (folterm.const "n") (folterm.const("a")))))
 
+meta def print_list : list folterm → tactic unit
+| (x :: xs) := do print_list xs, tactic.trace $ x.to_format 1 
+| [] := tactic.skip
+
+run_cmd do let t1 := folterm.app (folterm.const "a") (folterm.var 1), let t2 := folterm.app (folterm.const "a") (folterm.var 1), tactic.trace $ t1.is_eq t2
+run_cmd do let t1 := folterm.app (folterm.const "a") (folterm.var 1), let t2 := folterm.app (folterm.const "a") (folterm.var 1), tactic.trace $ t1.is_eq_besides_vars t2
+run_cmd do let form := example_formula2, 
+           let t1 := folterm.app (folterm.const "n") (folterm.const "a"), 
+           let t2 := folterm.const "n2", 
+           tactic.trace $ t1.to_format 1, 
+           tactic.trace $ t2.to_format 1, 
+           tactic.trace form, 
+           tactic.trace $ folform.replace_term form t1 t2,
+           print_list $ folform.get_all_const_terms form,
+           print_list $ folform.get_all_const_terms $ folform.replace_term form t1 t2
 
 -- #eval tactic.trace $ to_fof "example_formula" role.axioma example_formula  
 -- #eval tactic.trace $ to_fof "example_formula2" role.conjecture example_formula2  
@@ -700,7 +785,10 @@ meta def process_declarations : list name → hammer_tactic unit
 
 -- TODO: inductive declarations work, but not simple declarations! We get lambda expressions but need pi expression with equality
 
-
+meta def expr_in_parts : expr → tactic expr 
+| e@(expr.lam n b a c) := do tactic.trace n, tactic.trace a, tactic.trace a, tactic.trace c, return $ expr.pi n b a c
+| e@(expr.pi n b a c) := do tactic.trace n, tactic.trace a, tactic.trace a, tactic.trace c, return $ expr.lam n b a c
+| e := return e
 
 -- run_cmd do e <- lambda_expr_to_pi `(sum_two) `(λ(x:ℕ),x*2), tactic.trace e
 
@@ -712,11 +800,33 @@ meta def process_declarations : list name → hammer_tactic unit
 --             translate_axiom_expression e
 --       | _ := 
 
+--####################
+--## Simplification ##
+--####################
+
+
+
+
+meta def simplify_terms (clauses: list axioma) (conj: folform) : hammer_tactic (list axioma × folform) := 
+  do 
+    -- In general: Check for terms that only occur in their constant form 
+    -- Example: term abc('test', 'c') where abc is not used anywhere else in combination with variables (neither abc('test',V), abc(V,'c') nor abc(V1,V2)), we can simplify it to a new constant 'abc_test_c')
+    -- This procedure can be structured into three steps:
+    -- 1) Identify all possible constant terms
+    -- 2) Check if those terms only occur in that form in the corpus
+    -- 3) If step 2 was successful, perform simplification
+    return (clauses,conj)
+
+
+--###############################
+--## Final problem translation ##
+--###############################
+
 meta def translate_declaration (e : name) : hammer_tactic unit :=
 do 
     env <- tactic.get_env,
     d <- tactic.get_decl e,
-    l ← tactic.get_eqn_lemmas_for ff e,
+    l ← tactic.get_eqn_lemmas_for tt e,
     process_declarations (l.append [e])
 
 meta def translate_problem: list name → list expr → hammer_tactic unit
@@ -728,7 +838,8 @@ meta def problem_to_format (declr: list name) (clauses: list expr) (conjecture: 
   do  
     ⟨cl,cl_state⟩ <- using_hammer (translate_problem declr clauses),
     ⟨conj,conj_state⟩ <- using_hammer (hammer_f conjecture),
-    return $ to_tptp (hammer_state.axiomas cl_state) conj
+    ⟨cl_list,conj⟩ <- simplify_terms (hammer_state.axiomas cl_state) conj,
+    return $ to_tptp cl_list conj
 
 
 --###################
@@ -740,10 +851,10 @@ run_cmd do
   l ← tactic.get_eqn_lemmas_for ff `nat.iterate,
   tactic.trace l
 
--- def sum_two (x: ℕ) (y: ℕ) : ℕ := x+y
+def sum_two (x: ℕ) (y: ℕ) : ℕ := x+y
 
-def sum_two : ℕ → ℕ → ℕ
-| x y := x + y
+-- def sum_two : ℕ → ℕ → ℕ
+-- | x y := x + y
 
 def fib : nat -> nat
 | 0 := 1
@@ -766,12 +877,15 @@ inductive abc
 #check tactic.get_env
 #check tactic.get_decl
 #check declaration
-run_cmd do l ← tactic.get_decl `sum, tactic.trace l.value, tactic.trace l.is_definition, l ← tactic.get_eqn_lemmas_for ff `sum_two, tactic.trace l
+run_cmd do l ← tactic.get_decl `sum_two, tactic.trace l.value, tactic.trace l.is_definition, l ← tactic.get_eqn_lemmas_for tt `sum_two, d ← tactic.get_decl (list.head l), tactic.trace d.value, (c,_) <- using_hammer $ tactic.infer_type d.value, tactic.trace c
 run_cmd do l ← tactic.get_decl `sum_two, tactic.trace l.value, e ← (lambda_expr_to_pi `(sum_two) l.value), tactic.trace e, ⟨f, _⟩ <- using_hammer $ translate_axiom_expression `(sum_two = λ x y:ℕ, x+y), tactic.trace f, tactic.trace `(sum_two=λ x y : ℕ, x+y)
 run_cmd do l ← tactic.get_decl `fib, tactic.trace l.value
 run_cmd do process_declarations [`sum_two]
--- run_cmd do a <- tactic.dunfold [`sum_two] `(sum_two), tactic.trace a
+run_cmd do def_lemmas <- simp_lemmas.mk_default, d ← tactic.get_decl `sum_two, tactic.trace d.value, e <- def_lemmas.dsimplify [`sum_two] d.value, tactic.trace e
 -- run_cmd do d <- simp_lemmas.mk_default, l ← tactic.get_decl `sum_two, a <- simp_lemmas.add d l.value, e <- simp_lemmas.rewrite d l.value, tactic.trace e
+run_cmd do e <- expr_in_parts `(λ x:ℕ, x), tactic.trace $ to_raw_fmt e
+run_cmd do e <- expr_in_parts `(Π (x:ℕ), x=1), tactic.trace e
+
 run_cmd do l ← tactic.get_decl `abc, tactic.trace l.type, tactic.trace l.is_definition, l ← tactic.get_eqn_lemmas_for ff `abc, tactic.trace l
 
 -- == EXAMPLE PROBLEM TRANSLATION ==
@@ -781,7 +895,7 @@ run_cmd do ⟨f, _⟩ <- using_hammer $ problem_to_format [`sum_two, `fib] [`(1 
 -- == TESTING FUNCTION DECLARATION TO EXPRESSION == 
 
 -- We generate somewhere "hammer_c Prop" which breaks. Where do we do that, and how to get around it?
-run_cmd do ⟨f,_⟩ <- using_hammer $ problem_to_format [`fib, `sum_two, `fib2] 
+run_cmd do ⟨f,_⟩ <- using_hammer $ problem_to_format [`fib, `sum_two] 
                                                      [`(Π(x:ℕ), x + 1 = nat.succ x), `(Π(x y:ℕ),nat.succ x + y = nat.succ (x + y)), `(Π(x y:ℕ),x + y = y + x), `(nat.succ 0 = 1), `(nat.succ 1 = 2), `(nat.succ 2 = 3), `(nat.succ 3 = 4), `(nat.succ 4 = 5), `(nat.succ 5 = 6), `(nat.succ 6 = 7), `(nat.succ 7 = 8), `(0:ℕ), `(1:ℕ), `(2:ℕ), `(3:ℕ), `(4:ℕ), `(5:ℕ), `(6:ℕ), `(7:ℕ), `(8:ℕ)] -- , `(0:ℕ), `(1:ℕ), `(2:ℕ), `(3:ℕ), `(4:ℕ), `(5:ℕ), `(6:ℕ), `(7:ℕ), `(8:ℕ), `(Π x y : ℕ, sum_two x y =x+y)
                                                      `((fib 5 = 8)), 
            tactic.trace f 
@@ -800,6 +914,8 @@ run_cmd do ⟨f,_⟩ <- using_hammer $ problem_to_format [`sum_two, `fib] [`(Π(
            tactic.skip
 
 
+
+
 -- =================
 -- == OPEN POINTS ==
 -- =================
@@ -810,6 +926,7 @@ run_cmd do ⟨f,_⟩ <- using_hammer $ problem_to_format [`sum_two, `fib] [`(Π(
 -- 4) IO file export
 -- 5) How to translate inductive types
 -- 7) Proof reconstruction: get a list of assignments for axiom name (as given to SMT solver) and corresponding expression to know which ones were used
+-- 8) Simplification of terms 
 
 -- == DONE == 2) Inductive declarations use different names. E.g. 'fib' is related to as 'fib._main' in the equations
 --    Solution: if we find names with "._" suffix, we just cut them off there (hacky, but might work in most cases). 
