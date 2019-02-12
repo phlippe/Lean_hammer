@@ -1,4 +1,5 @@
-import system.io 
+import system.io
+-- import init.meta.rb_map
 @[reducible] meta def debruijn := nat
 
 meta def neg : bool → bool 
@@ -833,15 +834,6 @@ meta def expr_in_parts : expr → tactic expr
 | e@(expr.pi n b a c) := do tactic.trace n, tactic.trace a, tactic.trace a, tactic.trace c, return $ expr.lam n b a c
 | e := return e
 
--- run_cmd do e <- lambda_expr_to_pi `(sum_two) `(λ(x:ℕ),x*2), tactic.trace e
-
--- match d.value with
---       | expr.lam n b a c := 
---           do
---             tactic.trace n,
---             let e := expr.pi n b a c,
---             translate_axiom_expression e
---       | _ := 
 
 --####################
 --## Simplification ##
@@ -905,6 +897,231 @@ meta def simplify_terms (clauses: list axioma) (conj: folform) : hammer_tactic (
     check_const_terms formula clauses conj
 
 
+--#######################
+--## Premise selection ##
+--#######################
+-- Relies on old cold from Rob: https://github.com/robertylewis/relevance_filter/tree/dev_lean_reparam
+open tactic 
+open native
+
+meta def collect_consts (e : expr) : name_set :=
+e.fold mk_name_set 
+  (λ e' _ l, match e' with
+  | expr.const nm _ := l.insert nm 
+  | _ := l
+  end)
+
+meta def name_set.inter (s1 s2 : name_set) : name_set :=
+  s1.fold mk_name_set (λ nm s, if s2.contains nm then s.insert nm else s)
+
+meta def rb_map.find' {α β} [inhabited β] (map : rb_map α β) (a : α) : β :=
+match map.find a with
+| some b := b
+| none := default β
+end 
+
+meta def rb_set.of_list {α : Type} [has_lt α] [decidable_rel ((<) : α  → α → Prop)] : list α → rb_set α
+| [] := mk_rb_set
+| (h::t) := (rb_set.of_list t).insert h
+
+meta def find_nameset (map : rb_map name name_set) (feature : name) : name_set := ((map.find feature).get_or_else mk_name_set)
+
+-- meta def rb_set.inth {α} [inhabited α] (s : rb_set α) (i : ℕ) : α :=
+-- s.keys.inth i
+
+/--
+ map sends a name to the set of names which reference it.
+ update_features_map extends this map by adding idx to the set for each name in refs.
+-/
+meta def update_features_map (map : rb_map name name_set) (idx : name) (refs : name_set) : rb_map name name_set :=
+refs.fold map (λ nm map', map'.insert nm (((map'.find nm).get_or_else mk_name_set).insert idx))
+
+/--
+ Given a new declaration and the current collected data, adds the info from the new declaration.
+ Returns (contents_map, features_map, names), where
+  - contents_map maps a name dcl to a pair of name_sets (tp_consts, val_consts), where tp_consts contains
+     the symbols appearing in the type of dcl and val_consts contains the symbols appearing in the type of dcl
+  - features_map maps a name nm to the set of names for which nm appears in the value
+  - names is a list of all declaration names that have appeared
+-/
+
+meta def update_name_maps (dcl_name : name) (dcl_type : expr) (dcl_value : expr) : 
+     (rb_map name (name_set × name_set) × (rb_map name name_set) × Σ n, array n name) →  
+         (rb_map name (name_set × name_set)) × (rb_map name name_set) × Σ n, array n name 
+| (contents_map, features_map, ⟨n, names⟩):=
+  let val_consts := collect_consts dcl_value,
+      tp_consts := collect_consts dcl_type,
+      contents_map' := contents_map.insert dcl_name (tp_consts, val_consts),
+      features_map' := update_features_map features_map dcl_name tp_consts in
+  (contents_map', features_map', ⟨_, names.push_back dcl_name⟩)
+
+/--
+ Maps update_name_maps over the whole environment, excluding meta definitions.
+ Returns (contents_map, features_map, names), where
+  - contents_map maps a name dcl to a pair of name_sets (tp_consts, val_consts), where tp_consts contains
+     the symbols appearing in the type of dcl and val_consts contains the symbols appearing in the value of dcl
+  - features_map maps a name nm to the set of names for which nm appears in the value
+  - names is a list of all declaration names that have appeared 
+-/
+meta def get_all_decls : tactic ((rb_map name (name_set × name_set)) × (rb_map name name_set) × Σ n, array n name) :=
+do env ← get_env,
+   return $ env.fold
+    (mk_rb_map, mk_rb_map, ⟨0, array.nil⟩) 
+    (λ dcl nat_arr, 
+     match dcl with
+     | declaration.defn nm _ tp val _ tt := update_name_maps nm tp val nat_arr
+     | declaration.thm nm _ tp val := update_name_maps nm tp val.get nat_arr
+     | _ := nat_arr
+     end)
+
+section features_map
+variable features_map : rb_map name name_set
+
+meta def sqrt_aux : ℕ → ℕ → ℕ 
+| 0 n := 0
+| (nat.succ s) n := if (nat.succ s)*(nat.succ s) ≤ n then nat.succ s else sqrt_aux s n
+
+meta def sqrt (n : ℕ) : ℕ := sqrt_aux n n
+
+meta def log_aux : ℕ → ℕ → ℕ → ℕ 
+| 0 base n := if 1 ≤ n then log_aux 1 base n else 0
+| (nat.succ c) base n := if (nat.pow base (nat.succ c)) ≤ n then log_aux (nat.succ $ nat.succ c) base n else c
+
+meta def log (n : ℕ) (base : ℕ) : ℕ := log_aux 0 base n
+
+meta def sum_list : list ℕ → ℕ
+| (x::xs) := x + sum_list xs
+| [] := 0
+
+
+meta def feature_weight (feature : name) : ℕ :=
+let l := (find_nameset features_map feature).size in
+if l > 0 then log l 10 else 0
+
+meta def feature_distance (f1 f2 : name_set) : ℕ :=
+let common := f1.inter f2 in
+sum_list (common.to_list.map (λ n, nat.pow (feature_weight features_map n) 6))
+
+meta def name_distance (contents_map : rb_map name (name_set×name_set)) (n1 n2 : name) : ℕ :=
+let f1 := ((contents_map.find n1).get_or_else (mk_name_set, mk_name_set)).1,
+    f2 := ((contents_map.find n2).get_or_else (mk_name_set, mk_name_set)).1 in
+feature_distance features_map f1 f2
+
+meta def name_feature_distance (contents_map : rb_map name (name_set×name_set)) (n1 : name) (f2 : name_set) : ℕ :=
+let f1 := ((contents_map.find n1).get_or_else (mk_name_set, mk_name_set)).1 in
+feature_distance features_map f1 f2
+
+end features_map
+
+/-
+Sorting on arrays.
+-/
+
+section quicksort
+
+variables {α : Type}  [inhabited α] 
+  (op : α → α → bool)
+local infix `<` := op
+variable  [has_to_format α]
+
+meta def swap {n : ℕ} (A : array n α) (i j : ℕ) : array n α :=
+let tmp_j := A.read' j,
+    tmp_i := A.read' i in
+(A.write' j tmp_i).write' i tmp_j 
+
+meta def partition_aux (hi : ℕ) (pivot : α) {n : ℕ} : Π (A : array n α) (i j : ℕ), ℕ × array n α
+| A i j :=
+if j = hi then (i, A) else
+let tmp_j := A.read' j in
+if bnot (tmp_j < pivot) then partition_aux A i (j+1) else
+  let tmp_i := A.read' i,
+      A' := (A.write' j tmp_i).write' i tmp_j in
+  partition_aux A' (i+1) (j+1)
+--else
+--  partition_aux A i (j+1) 
+
+meta def partition {n : ℕ} (A : array n α) (lo hi : ℕ) : ℕ × array n α :=
+let pivot := A.read' hi,
+    i := lo,
+    (i', A') := partition_aux op hi pivot A i lo,
+    A'' := if A'.read' hi < A'.read' i' then swap A' i' hi else A' in
+(i', A'')
+
+meta def quicksort_aux {n : ℕ} : Π (A : array n α) (lo hi : ℕ), array n α
+| A lo hi := 
+if bnot (nat.lt lo hi) then A else
+let (p, A') := partition op A lo hi in
+quicksort_aux (quicksort_aux A' lo (p-1)) (p+1) hi
+
+
+meta def quicksort {n : ℕ} (A : array n α) : array n α :=
+quicksort_aux op A 0 (n-1)
+
+meta def partial_quicksort_aux {n : ℕ} : Π (A : array n α) (lo hi k : ℕ), array n α
+| A lo hi k := 
+if nat.lt lo hi then
+  let (p, A') := partition op A lo hi,
+      A'' := partial_quicksort_aux A' lo (p-1) k in
+  if nat.lt p (k-1) then partial_quicksort_aux A'' (p+1) hi k else A''
+else A
+
+meta def partial_quicksort {n : ℕ} (A : array n α) (k : ℕ) : array n α :=
+partial_quicksort_aux op A 0 (n-1) k
+
+end quicksort
+
+meta def find_smallest_in_array {n α} [inhabited α] (a : array n α) (lt : α → α → bool) : list α :=
+a.foldl [] (λ nm l, if lt nm (l.head) then [nm] else if lt l.head nm then l else nm::l)
+
+meta def nearest_k (features : name_set) (contents_map : rb_map name (name_set × name_set))
+     (features_map : rb_map name name_set) {n} (names : array n name) (k : ℕ) : list (name × nat) :=
+let arr_val_pr : array n (name × nat) := ⟨λ i, let v := names.read i in (v, name_feature_distance features_map contents_map v features)⟩, 
+    sorted := partial_quicksort
+      (λ n1 n2 : name × nat, nat.lt n2.2 n1.2)
+       arr_val_pr k,
+    name_list := if h : k ≤ n then (sorted.take k h).to_list else sorted.to_list in
+name_list
+
+meta def nearest_k_of_expr (e : expr) (contents_map : rb_map name (name_set × name_set))
+     (features_map : rb_map name name_set) {n} (names : array n name) (k : ℕ) : list (name × nat) :=
+let features := collect_consts e in nearest_k features contents_map features_map names k
+
+meta def nearest_k_of_name (nm : name) (contents_map : rb_map name (name_set × name_set))
+     (features_map : rb_map name name_set) {n} (names : array n name) (k : ℕ) : list (name × nat) :=
+let features := ((contents_map.find nm).get_or_else (mk_name_set, mk_name_set)).1 in nearest_k features contents_map features_map names k
+
+def find_val_in_list {α β} [decidable_eq α] [inhabited β] (a : α) : list (α × β) → β 
+| [] := default β
+| ((a', b)::t) := if a = a' then b else find_val_in_list t
+
+meta def relevance_to_feature (goal : name_set) (feature : name) (contents_map : rb_map name (name_set × name_set))
+     (nearest : list (name × nat)) : nat :=
+let --nearest_map := rb_map.of_list nearest,
+    contains_feature := nearest.filter (λ b : name × nat, ((contents_map.find b.1).get_or_else (mk_name_set, mk_name_set)).2.contains feature),
+    weighted_vals := (contains_feature.map
+     (λ nm_flt : name × nat, nm_flt.2 / ((contents_map.find nm_flt.1).get_or_else (mk_name_set, mk_name_set)).2.size)) in
+((27 : nat) / 10)* (sum_list weighted_vals) + find_val_in_list feature nearest  --nearest_map.find' feature
+
+
+-- TODO: the k in nearest_k shouldn't be the same as the argument k
+meta def find_k_most_relevant_facts_to_goal (goal : name_set)  (contents_map : rb_map name (name_set × name_set))
+     (features_map : rb_map name name_set) {n} (names : array n name) (k : ℕ) : list (name × nat) :=
+let nearest := nearest_k goal contents_map features_map names k,
+    name_val_prs : array n (name × nat) := ⟨λ i, let v := names.read i in (v, relevance_to_feature goal v contents_map nearest)⟩,
+    relevant := partial_quicksort (λ n1 n2 : name × nat, nat.lt n2.2 n1.2) name_val_prs k,
+    name_list := if h : k ≤ n then (relevant.take k h).to_list else relevant.to_list in
+name_list
+
+
+meta def find_k_most_relevant_facts_to_expr (goal : expr)  (contents_map : rb_map name (name_set × name_set))
+     (features_map : rb_map name name_set) {n} (names : array n name) (k : ℕ) : list (name × nat) :=
+let features := collect_consts goal in
+find_k_most_relevant_facts_to_goal features contents_map features_map names k
+
+
+
+run_cmd do let nm := collect_consts `(1+1=2), tactic.trace $ name_set.to_list nm
+
 --###############################
 --## Final problem translation ##
 --###############################
@@ -934,13 +1151,9 @@ meta def problem_to_format (declr: list name) (clauses: list expr) (conjecture: 
 --## Testing stuff ##
 --###################
 
--- == TESTING DECLARATION CONVERSION ==
-run_cmd do
-  l ← tactic.get_eqn_lemmas_for ff `nat.iterate,
-  tactic.trace l
-
 -- def sum_two (x: ℕ) (y: ℕ) : ℕ := x+y
 
+-- Inductive declaration because the simple version above is not working yet
 def sum_two : ℕ → ℕ → ℕ
 | x y := x + y
 
@@ -976,19 +1189,23 @@ run_cmd do e <- expr_in_parts `(Π (x:ℕ), x=1), tactic.trace e
 
 run_cmd do l ← tactic.get_decl `abc, tactic.trace l.type, tactic.trace l.is_definition, l ← tactic.get_eqn_lemmas_for ff `abc, tactic.trace l
 
+run_cmd do (contents, features, ⟨n, names⟩) ← get_all_decls,
+            tactic.trace $ nearest_k_of_name `sum_two  contents features names 100
+
 -- == EXAMPLE PROBLEM TRANSLATION ==
 run_cmd do ⟨f, _⟩ <- using_hammer $ problem_to_format [] [`(Π(x:ℕ), nat.succ x = x + 1), `(1 : nat), `(1+1 = 2)] `(not (1+1 = 2)),
            tactic.trace f 
            
 -- == TESTING FUNCTION DECLARATION TO EXPRESSION == 
-
 run_cmd do ⟨f,_⟩ <- using_hammer $ problem_to_format [`fib2, `sum_two] 
                                                      [`(Π(x:ℕ), x + 1 = nat.succ x), `(Π(x y:ℕ),nat.succ x + y = nat.succ (x + y)), `(Π(x y:ℕ),x + y = y + x), `(nat.succ 0 = 1), `(nat.succ 1 = 2), `(nat.succ 2 = 3), `(nat.succ 3 = 4), `(nat.succ 4 = 5), `(nat.succ 5 = 6), `(nat.succ 6 = 7), `(nat.succ 7 = 8), `(0:ℕ), `(1:ℕ), `(2:ℕ), `(3:ℕ), `(4:ℕ), `(5:ℕ), `(6:ℕ), `(7:ℕ), `(8:ℕ)] -- , `(0:ℕ), `(1:ℕ), `(2:ℕ), `(3:ℕ), `(4:ℕ), `(5:ℕ), `(6:ℕ), `(7:ℕ), `(8:ℕ), `(Π x y : ℕ, sum_two x y =x+y)
                                                      `((fib2 5 = 8)), 
            tactic.trace f 
+
 --###################
 --## IMPORT/EXPORT ##
 --###################
+-- -> Started but currently stopped. Will be continued after other points are done
 open io
 open io.fs
 
@@ -1008,13 +1225,21 @@ run_cmd do ⟨f,_⟩ <- using_hammer $ problem_to_format [`sum_two, `fib] [`(Π(
 -- =================
 -- 1) Lambda expressions to pi notation to translate them similar to the others. Alternative: convert all function declarations into inductive ones. 
 --    Idea from Rob: look into tactic.dsimplify
--- 3) Retrieve all definitions of another definition (example 'def sum_twice (x:ℕ) : ℕ := 2 * square(x)' => get definition of square) and add them to axioms
---    => Ask Rob for old code 
 -- 4) IO file export
 -- 5) How to translate inductive types
 -- 7) Proof reconstruction: get a list of assignments for axiom name (as given to SMT solver) and corresponding expression to know which ones were used
--- 8) Simplification of terms 
 
+-- #################
+-- ## IN PROGRESS ##
+-- #################
+-- 3) Retrieve all definitions of another definition (example 'def sum_twice (x:ℕ) : ℕ := 2 * square(x)' => get definition of square) and add them to axioms
+--    => Old code moved to Lean 3.3.0. Relevance filter might be implemented externally in C++ to be faster
+-- 8) Simplification of terms => VERY FIRST VERSION replacing constant terms by new constant. 
+--    Open extensions: -> If a(b, 'nat') and a(b, V1) but 'nat' is the only constant occuring at the second position, we replace this variable by nat
+
+-- ##########
+-- ## DONE ##
+-- ##########
 -- == DONE == 2) Inductive declarations use different names. E.g. 'fib' is related to as 'fib._main' in the equations
 --    Solution: if we find names with "._" suffix, we just cut them off there (hacky, but might work in most cases). 
 -- == DONE == 6) Inductive: exclude previous cases for each constructor. So if 'def fac (n:ℕ) : ℕ | 0 := 0 | n := n * fac (n-1)' is translated, the second case has 'G(n,Nat) ∧ n != 0 → ...' instead of just checking for nat type as 0 fulfills this as well.
