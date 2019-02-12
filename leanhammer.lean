@@ -851,12 +851,16 @@ meta def replace_term_in_list : list axioma → folterm → folterm → list axi
 | (x :: xs) old_term new_term := [⟨x.n, folform.replace_term x.f old_term new_term⟩] ++ (replace_term_in_list xs old_term new_term)
 | [] old_term new_term := []
 
+meta def replace_term_in_formlist : list folform → folterm → folterm → list folform
+| (x :: xs) old_term new_term := [folform.replace_term x old_term new_term] ++ (replace_term_in_formlist xs old_term new_term)
+| [] old_term new_term := []
+
 meta def is_term_const_in_list : list axioma → folterm → bool 
 | (x :: xs) t := folform.contains_only_const x.f t && is_term_const_in_list xs t
 | [] t := tt
 
-meta def check_for_replacement : list folterm → list axioma → folform → tactic (list axioma × folform)
-| (x :: xs) clauses conj := do
+meta def check_for_replacement : list folterm → list folform → list axioma → folform → bool → tactic (bool × list folform × list axioma × folform)
+| (x :: xs) ds clauses conj bf := do
       let x_const := (is_term_const_in_list clauses x) && (folform.contains_only_const conj x),
       if x_const
       then do
@@ -864,10 +868,11 @@ meta def check_for_replacement : list folterm → list axioma → folform → ta
         let new_const_term := folterm.const ("const_" ++ c_name),
         let clauses := replace_term_in_list clauses x new_const_term,
         let conj := folform.replace_term conj x new_const_term,
-        check_for_replacement xs clauses conj
+        let ds := replace_term_in_formlist ds x new_const_term,
+        check_for_replacement xs ds clauses conj tt
       else 
-        check_for_replacement xs clauses conj
-| [] clauses conj := return (clauses, conj)
+        check_for_replacement xs ds clauses conj bf
+| [] ds clauses conj bf := return (bf, ds, clauses, conj)
 
 meta def check_const_terms : list folform → list axioma → folform → tactic (list axioma × folform)
 | (x :: xs) clauses conj := do 
@@ -876,8 +881,12 @@ meta def check_const_terms : list folform → list axioma → folform → tactic
       --       Thus, we need to implement the functions above next to for the axiom list as well for a folform list and apply on xs
       --       Note, that we have to repeat the simplification with x as soon as we found something to simplify!
       let d := folform.get_all_const_terms x, 
-      (clauses, conj) <- check_for_replacement d clauses conj,
-      check_const_terms xs clauses conj
+      (b, new_xs, clauses, conj) <- check_for_replacement d (x::xs) clauses conj ff,
+      if b
+      then
+        check_const_terms new_xs clauses conj
+      else
+        check_const_terms xs clauses conj
 | [] clauses conj := return (clauses, conj)
 
 meta def axiomas_to_folforms : list axioma → list folform
@@ -917,7 +926,7 @@ meta def problem_to_format (declr: list name) (clauses: list expr) (conjecture: 
     ⟨cl,cl_state⟩ <- using_hammer (translate_problem declr clauses),
     ⟨conj,conj_state⟩ <- using_hammer (hammer_f conjecture),
     ⟨cl_list,conj⟩ <- simplify_terms (hammer_state.axiomas cl_state) conj,
-    ⟨cl_list,conj⟩ <- simplify_terms cl_list conj, -- TODO: Fix problem of not getting all simplifications in the first run (see function comments)
+    -- ⟨cl_list,conj⟩ <- simplify_terms cl_list conj, -- TODO: Fix problem of not getting all simplifications in the first run (see function comments)
     return $ to_tptp cl_list conj
 
 
@@ -973,7 +982,6 @@ run_cmd do ⟨f, _⟩ <- using_hammer $ problem_to_format [] [`(Π(x:ℕ), nat.s
            
 -- == TESTING FUNCTION DECLARATION TO EXPRESSION == 
 
--- We generate somewhere "hammer_c Prop" which breaks. Where do we do that, and how to get around it?
 run_cmd do ⟨f,_⟩ <- using_hammer $ problem_to_format [`fib2, `sum_two] 
                                                      [`(Π(x:ℕ), x + 1 = nat.succ x), `(Π(x y:ℕ),nat.succ x + y = nat.succ (x + y)), `(Π(x y:ℕ),x + y = y + x), `(nat.succ 0 = 1), `(nat.succ 1 = 2), `(nat.succ 2 = 3), `(nat.succ 3 = 4), `(nat.succ 4 = 5), `(nat.succ 5 = 6), `(nat.succ 6 = 7), `(nat.succ 7 = 8), `(0:ℕ), `(1:ℕ), `(2:ℕ), `(3:ℕ), `(4:ℕ), `(5:ℕ), `(6:ℕ), `(7:ℕ), `(8:ℕ)] -- , `(0:ℕ), `(1:ℕ), `(2:ℕ), `(3:ℕ), `(4:ℕ), `(5:ℕ), `(6:ℕ), `(7:ℕ), `(8:ℕ), `(Π x y : ℕ, sum_two x y =x+y)
                                                      `((fib2 5 = 8)), 
