@@ -1,25 +1,25 @@
 
 @[reducible] meta def debruijn := nat
 
-meta def neg : bool → bool 
+meta def neg : bool → bool
 | tt := ff
 | ff := tt
 
 meta inductive folpred
 | P : folpred
-| T : folpred 
+| T : folpred
 | eq : folpred
 
 meta inductive folterm
 | const : name → folterm -- Constant with given label
-| lconst : name → name → folterm -- 
+| lconst : name → name → folterm --
 | prf : folterm
 | var : debruijn → folterm -- Variable, but what is debruijn for? Are variables just specified by counter? X1,X2,X3,...
 | app : folterm → folterm → folterm -- @(t,s) is the same as t s => apply t on input s
 
-meta inductive folform 
+meta inductive folform
 | P : folterm → folform -- P(t) represents the provability of t
-| T : folterm → folterm → folform -- T(t,τ) represents that t has type τ 
+| T : folterm → folterm → folform -- T(t,τ) represents that t has type τ
 | eq : folterm → folterm → folform -- Equality. t == s
 | bottom : folform -- Constant False
 | top : folform -- Constant True
@@ -28,7 +28,7 @@ meta inductive folform
 | iff : folform → folform → folform -- Two-sided imply/iff: A ↔ B
 | conj : folform → folform → folform -- Conjunction: A ∧ B
 | disj : folform → folform → folform -- Disjunction: A ∨ B
-| all : name → name → folform → folform -- For all: ∀ (a : α) t -- a and α are the names, t the formula 
+| all : name → name → folform → folform -- For all: ∀ (a : α) t -- a and α are the names, t the formula
 | exist : name → name → folform → folform -- Exists: ∃ (a : α) t -- Similar as above
 
 meta structure introduced_constant := -- Structure representing a new constant introduced for translation
@@ -48,7 +48,7 @@ section tptp
 open format
 -- Used functions from this set
 --   1) to_fmt: {α : Type} (a : α) := a → format => returns a format object for an instance of any type
---   2) 
+--   2)
 
 -- axiom is a reserved word in Lean
 meta inductive role -- Role of a formula. Can be either axiom or conjecture (for tptp format)
@@ -59,10 +59,15 @@ meta def role.to_format : role → format -- Probably decide how to print a form
 | role.axioma := to_fmt "axiom"
 | role.conjecture := to_fmt "conjecture"
 
+/-
+has_to_format instances tell Lean how to print objects of this type.
+e.g. if you `#eval t` where `t : role`, this tells Lean to use `roll.to_format` to print the
+result of the eval.
+-/
 meta instance : has_to_format role := -- What is this for?
 ⟨role.to_format⟩
 
-meta def folterm.to_name : folterm → name 
+meta def folterm.to_name : folterm → name
 | (folterm.const n) := "c_" ++ n
 | (folterm.lconst n1 n2) := "lc_" ++ n1 ++ "_" ++ n2
 | (folterm.prf) := "prf"
@@ -77,9 +82,9 @@ meta def folterm.is_const : folterm → bool
 | (folterm.var _) := ff
 | (folterm.app t u) := t.is_const && u.is_const
 
-meta def folterm.is_eq : folterm → folterm → bool 
+meta def folterm.is_eq : folterm → folterm → bool
 | (folterm.const n1) (folterm.const n2) := (n1 = n2)
-| (folterm.const _) _ := ff 
+| (folterm.const _) _ := ff
 | (folterm.lconst n1 l1) (folterm.lconst n2 l2) := (n1 = n2) && (l1 = l2)
 | (folterm.lconst _ _) _ := ff
 | (folterm.prf) (folterm.prf) := tt
@@ -87,31 +92,31 @@ meta def folterm.is_eq : folterm → folterm → bool
 | (folterm.var n1) (folterm.var n2) := (n1 = n2)
 | (folterm.var _) _ := ff
 | (folterm.app t1 u1) (folterm.app t2 u2) := (t1.is_eq t2) && (u1.is_eq u2)
-| (folterm.app _ _) _ := ff 
+| (folterm.app _ _) _ := ff
 
 meta def folterm.is_eq_besides_vars : folterm → folterm → bool
 | (folterm.var _) _ := tt
 | _ (folterm.var _) := tt
 | (folterm.const n1) (folterm.const n2) := (n1 = n2)
-| (folterm.const _) _ := ff 
+| (folterm.const _) _ := ff
 | (folterm.lconst n1 l1) (folterm.lconst n2 l2) := (n1 = n2) && (l1 = l2)
 | (folterm.lconst _ _) _ := ff
 | (folterm.prf) (folterm.prf) := tt
 | (folterm.prf) _ := ff
 | (folterm.app t1 u1) (folterm.app t2 u2) := (t1.is_eq_besides_vars t2) && (u1.is_eq_besides_vars u2)
-| (folterm.app _ _) _ := ff 
+| (folterm.app _ _) _ := ff
 
-meta def folterm.is_eq_besides_deeper_vars : folterm → folterm → bool 
+meta def folterm.is_eq_besides_deeper_vars : folterm → folterm → bool
 | (folterm.var _) _ := ff
 | _ (folterm.var _) := ff
 | (folterm.const n1) (folterm.const n2) := (n1 = n2)
-| (folterm.const _) _ := ff 
+| (folterm.const _) _ := ff
 | (folterm.lconst n1 l1) (folterm.lconst n2 l2) := (n1 = n2) && (l1 = l2)
 | (folterm.lconst _ _) _ := ff
 | (folterm.prf) (folterm.prf) := tt
 | (folterm.prf) _ := ff
 | (folterm.app t1 u1) (folterm.app t2 u2) := (t1.is_eq_besides_vars t2) && (u1.is_eq_besides_vars u2)
-| (folterm.app _ _) _ := ff 
+| (folterm.app _ _) _ := ff
 
 meta def folterm.replace : folterm → folterm → folterm → folterm
 | orig@(folterm.app t u) old_term new_term := if orig.is_eq old_term then new_term else folterm.app (folterm.replace t old_term new_term) (folterm.replace u old_term new_term)
@@ -151,11 +156,11 @@ meta def folform.get_all_const_terms : folform → list folterm
 | orig@(folform.exist n1 n2 f) := f.get_all_const_terms
 | orig := []
 
-meta def folterm.contains_only_const : folterm → folterm → bool 
+meta def folterm.contains_only_const : folterm → folterm → bool
 | c@(folterm.app t u) ct := if (c.is_eq_besides_deeper_vars ct) && (neg c.is_const) then ff else t.contains_only_const ct && u.contains_only_const ct
 | c ct := (neg (c.is_eq_besides_deeper_vars ct)) || (c.is_const)
 
-meta def folform.contains_only_const : folform → folterm → bool 
+meta def folform.contains_only_const : folform → folterm → bool
 | orig@(folform.P t) ct := t.contains_only_const ct
 | orig@(folform.T t1 t2) ct := t1.contains_only_const ct && t2.contains_only_const ct
 | orig@(folform.eq t1 t2) ct := t1.contains_only_const ct && t2.contains_only_const ct
@@ -187,9 +192,17 @@ meta def names_to_id_format : list name → nat → list format
 | [] d := []
 
 -- For what do I have to define this type? It is an identity mapping of input to output
+/-
+I don't know. format objects are a little richer than strings -- they include grouping information
+for pretty-printing with line breaks, etc. Maybe this is there as a future hook for better grouping.
+Right now I don't think it does anything.
+-/
 meta def mygroup : format → format := id -- @[inline] def id {α : Sort u} (a : α) : α := a
 
 -- Convert term into format. Second argument defines the depth (number of free variables that already have been defined in this formula)
+/-
+lconst is a local constant, not a long constant.
+-/
 meta def folterm.to_format : folterm → nat → format
 | (folterm.const n) _ := "'" ++ to_fmt n ++ "'" -- A constant is converted into its name itself
 | (folterm.lconst n _) _ := "'" ++ to_fmt n ++ "'" -- A long(?) constant is processed the same way
@@ -199,14 +212,14 @@ meta def folterm.to_format : folterm → nat → format
   "a(" ++ t.to_format depth ++ "," ++
     (mygroup $ nest 2 $ line ++ u.to_format depth) ++ ")" -- Lean notation: "a $ b c" is the same as "a (b c)", just simplifies notation of brackets
 
--- Convert formula into format with extra input 
+-- Convert formula into format with extra input
 -- depth: defines number of free variables that already have been defined
 meta def folform.to_format_aux : folform → nat → format
 -- For-all operator ∀ n:n1, f
-| e@(folform.all n n1 f) depth := 
+| e@(folform.all n n1 f) depth :=
   let (ys, g) := folform.to_format_collect_vars e [] in -- Define (ys,g) as the expression for all following statements
   let ys' := names_to_id_format ys depth in
-    "! [" ++ -- ! is TPTP expression for ∀ 
+    "! [" ++ -- ! is TPTP expression for ∀
     (mygroup $ nest 3 $ (join $ list.intersperse ("," ++ line) ys') ++ "] :") ++ -- Print list of free variables
     -- list.intersperse: put new element ","+newline between all elements. Similar to " ".join(list) in python
     -- join: Composes multiple formats into one by (similar to) concatenating the single formats/strings
@@ -216,7 +229,7 @@ meta def folform.to_format_aux : folform → nat → format
   -- Same process as ∀ but only change "!" by "?" for TPTP output
   let (ys, g) := folform.to_format_collect_vars e [] in
   let ys' := names_to_id_format ys depth in
-    "? [" ++ 
+    "? [" ++
     (mygroup $ nest 3 $ (join $ list.intersperse ("," ++ line) ys') ++ "] :") ++
     (mygroup $ nest 2 $ line ++ "(" ++ (mygroup $ nest 1 $ g.to_format_aux $ depth + ys.length)) ++ ")"
 -- Constant false
@@ -234,7 +247,7 @@ meta def folform.to_format_aux : folform → nat → format
   "(" ++ (nest 1 $ t.to_format depth ++
     (mygroup $ line ++ "= " ++ (nest 2 $ u.to_format depth ++ ")")))
 -- Negate f. If f is equality relation, just negate this one
-| (folform.neg f) depth := 
+| (folform.neg f) depth :=
   match f with
   | (folform.eq t u) := -- Equality relations are negated by '!=' instead of '~(...=...)'
     "(" ++ (nest 1 $ t.to_format depth ++
@@ -243,7 +256,7 @@ meta def folform.to_format_aux : folform → nat → format
   end
 -- Imply f → g with token '=>' in TPTP notation
 | (folform.imp f g) depth :=
-  "(" ++ (nest 1 $ f.to_format_aux depth ++ ")") ++ 
+  "(" ++ (nest 1 $ f.to_format_aux depth ++ ")") ++
     (mygroup $ line ++ (nest 4 $ "=> (" ++ g.to_format_aux depth ++ ")"))
 -- Iff similar to imply
 | (folform.iff f g) depth :=
@@ -257,7 +270,7 @@ meta def folform.to_format_aux : folform → nat → format
 | (folform.disj f g) depth :=
   "(" ++ (nest 1 $ f.to_format_aux depth ++ ")") ++
     (mygroup $ line ++ (nest 3 $ "| (" ++ g.to_format_aux depth ++ ")"))
-     
+
 -- For outer formulas, start with depth 0 (all others use recursive function above)
 meta def folform.to_format (f : folform) : format := folform.to_format_aux f 0
 
@@ -271,10 +284,10 @@ meta def to_fof : string → role → folform → format
 to_fmt "fof("
 ++ (mygroup $ nest 4 $ join $ list.intersperse ("," ++ line) $ -- Combine all parts by "," and new line
   [to_fmt id, to_fmt r, "(" ++ (mygroup $ nest 1 $ to_fmt f) ++ ")"]) ++ to_fmt ")." -- Output: fof(name, role, (formula)).
-  
+
 -- Combine list of axioma into single string
 meta def to_tptp : list axioma → folform → format
-| (⟨n, f⟩::as) conjecture := 
+| (⟨n, f⟩::as) conjecture :=
   to_fof ("'" ++ to_string n ++ "'") role.axioma f
      ++ line
      ++ line
@@ -287,7 +300,7 @@ meta def myformat {α : Type} [has_to_format α] : list α → format
 | [] := to_fmt "[]"
 | xs := to_fmt "[" ++ mygroup (format.nest 1 $ format.join $ list.intersperse ("," ++ format.line) $ xs.map to_fmt) ++ to_fmt "]"
 
-end tptp 
+end tptp
 
 
 
@@ -305,7 +318,7 @@ meta def name.repr : name → string
 meta instance : has_repr name :=
 ⟨name.repr⟩
 
-meta def folterm.repr : folterm → string 
+meta def folterm.repr : folterm → string
 | (folterm.const n) := "(folterm.const " ++ repr n ++ ")"
 | (folterm.lconst n n1) := "(folterm.lconst " ++ repr n ++ " " ++ repr n1 ++ ")"
 | folterm.prf := "folterm.prf"
@@ -370,11 +383,11 @@ meta def folform.abstract_locals : folform → list name → folform := λ f l, 
 ------------------------------------
 
 meta def example_formula : folform :=
-folform.all `h1 `h1 $ folform.all `h2 `h2 $ -- folform.all `h3 `h3 $ 
+folform.all `h1 `h1 $ folform.all `h2 `h2 $ -- folform.all `h3 `h3 $
   folform.neg $
   folform.iff
     (folform.conj
-      (folform.neg $ folform.eq (folterm.var 0) (folterm.var 1)) 
+      (folform.neg $ folform.eq (folterm.var 0) (folterm.var 1))
       (folform.eq (folterm.var 0) (folterm.var 1)) )
     (folform.imp
       (folform.conj (folform.P $ folterm.const "a") (folform.disj (folform.P $ folterm.var 0) (folform.P $ folterm.var 1)))
@@ -384,28 +397,27 @@ meta def example_formula2 : folform :=
 folform.imp (folform.conj (folform.P $ folterm.const "n") (folform.P $ folterm.const "a"))
 (folform.T (folterm.const "n") (folterm.app (folterm.const "n") (folterm.app (folterm.const "n") (folterm.const("a")))))
 
-meta def print_list : list folterm → tactic unit
-| (x :: xs) := do print_list xs, tactic.trace $ x.to_format 1 
-| [] := tactic.skip
+meta def print_list (l : list folterm) : tactic unit :=
+l.reverse.mmap' $ λ x, tactic.trace (x.to_format 1)
 
 -- run_cmd do let t1 := folterm.app (folterm.const "a") (folterm.var 1), let t2 := folterm.app (folterm.const "a") (folterm.var 1), tactic.trace $ t1.is_eq t2
--- run_cmd do let t1 := folterm.app (folterm.var 2) (folterm.const "a"), let t2 := folterm.app (folterm.const "a") (folterm.const "d"), 
---            tactic.trace $ t1.is_eq_besides_vars t2, 
+-- run_cmd do let t1 := folterm.app (folterm.var 2) (folterm.const "a"), let t2 := folterm.app (folterm.const "a") (folterm.const "d"),
+--            tactic.trace $ t1.is_eq_besides_vars t2,
 --            tactic.trace $ t1.contains_only_const t2,
 --            tactic.trace $ (folterm.var 2).contains_only_const t2
--- run_cmd do let form := example_formula2, 
---            let t1 := folterm.app (folterm.const "n") (folterm.const "a"), 
---            let t2 := folterm.const "n2", 
---            tactic.trace $ t1.to_format 1, 
---            tactic.trace $ t2.to_format 1, 
---            tactic.trace form, 
+-- run_cmd do let form := example_formula2,
+--            let t1 := folterm.app (folterm.const "n") (folterm.const "a"),
+--            let t2 := folterm.const "n2",
+--            tactic.trace $ t1.to_format 1,
+--            tactic.trace $ t2.to_format 1,
+--            tactic.trace form,
 --            tactic.trace $ folform.replace_term form t1 t2,
 --            print_list $ folform.get_all_const_terms form,
 --            print_list $ folform.get_all_const_terms $ folform.replace_term form t1 t2
 
--- #eval tactic.trace $ to_fof "example_formula" role.axioma example_formula  
--- #eval tactic.trace $ to_fof "example_formula2" role.conjecture example_formula2  
--- #eval tactic.trace example_formula.repr 
+-- #eval tactic.trace $ to_fof "example_formula" role.axioma example_formula
+-- #eval tactic.trace $ to_fof "example_formula2" role.conjecture example_formula2
+-- #eval tactic.trace example_formula.repr
 
 -----------------------------------------------------------------------------------------------------------------------
 -----------------------------------------------------------------------------------------------------------------------
