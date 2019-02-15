@@ -1,5 +1,5 @@
 import system.io
-import .translation_tptp
+import .tptp.translation_tptp
 import .problem_translation
 
 --###################

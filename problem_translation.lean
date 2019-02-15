@@ -1,6 +1,6 @@
-import .tptp 
-import .translation_tptp
-import .simplification_tptp
+import .tptp.tptp 
+import .tptp.translation_tptp
+import .tptp.simplification_tptp
 
 --##################################
 --## 5.3 Translating declarations ##

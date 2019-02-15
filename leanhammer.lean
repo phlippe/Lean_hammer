@@ -1,8 +1,8 @@
 import system.io
-import .tptp
+import .tptp.tptp
 import .premise_selection
-import .simplification_tptp 
-import .translation_tptp
+import .tptp.simplification_tptp 
+import .tptp.translation_tptp
 import .problem_translation
 
 --#################
