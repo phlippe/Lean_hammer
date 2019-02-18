@@ -1,0 +1,8 @@
+[package]
+name = "lean_hammer"
+version = "0.1"
+lean_version = "3.4.2"
+path = "src"
+
+[dependencies]
+mathlib = {git = "https://github.com/leanprover-community/mathlib", rev = "8730619bb769cd92ef7c8557d8ee42a5c6bf05f1"}
