@@ -1,7 +1,7 @@
 # Lean hammer
 Development repository of a hammer for Lean.
 
-## File structure
+## File structure for FOL specific translation
 * [_leanhammer.lean_](leanhammer.lean): Main file combining all functions for testing
 * [_problem_translation.lean_](problem_translation.lean): Summarizes the steps for translating a problem into FOF. Note that this file should be independent of the actual encoding of the first-order logic.
 * [_premise_selection.lean_](premise_selection.lean): Implementation of strategies for selecting the most relevant premises/axioms. Might be moved into C/C++ code for performance gain. 
@@ -16,3 +16,8 @@ Next to the general files, there are several functions that directly interact wi
 
 ### TF0 encoding
 Typed first-order form. Coming soon...
+
+## Generalized version
+<p align="center">
+  <img src="documentation/figures/pipeline_DTT_HOL.png" width="500" title="Overview of the pipeline">
+</p>
