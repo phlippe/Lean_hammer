@@ -23,6 +23,9 @@ citecolor = black]{hyperref} % For hyperlinks in the PDF
 \usepackage{rotating} % Rotation tools
 \usepackage{censor} % Facilities for controlling restricted text
 \newcommand{\note}[1]{\marginpar{\scriptsize \textcolor{red}{#1}}} % Enables comments in red on margin
+\newcommand{\F}[0]{$\mathcal{F}$ }
+\newcommand{\G}[0]{$\mathcal{G}$ }
+\newcommand{\C}[0]{$\mathcal{C}$ }
 \definecolor{colkeyword}{rgb}{0,0.4,0}
 \definecolor{colname}{rgb}{0.4,0.4,0}
 \definecolor{coltype}{rgb}{0.4,0,0.4}
@@ -41,9 +44,9 @@ citecolor = black]{hyperref} % For hyperlinks in the PDF
 
 \section{Specific pipeline DTT to FOL}
 \subsection{Approach}
-The first version of the Lean hammer implements a direct translation from DTT to FOL. The approach follows the \href{https://link.springer.com/article/10.1007/s10817-018-9458-4}{Coq hammer paper} by introducing an intermediate representation
-\subsection{Implementation}
-\subsubsection{Code structure}
+The first version of the Lean hammer implements a direct translation from DTT to FOL. The approach follows the \href{https://link.springer.com/article/10.1007/s10817-018-9458-4}{Coq hammer paper} \cite{CoqHammer} by introducing an intermediate representation. Details are explained along the code description.
+% \subsection{Implementation}
+\subsection{Code structure}
 The code is split into multiple files
 \begin{itemize}
 	\item \texttt{leanhammer.lean}: Main file combining all functions for testing. In here, we include examples of translation, and show the usage of the overall system.
@@ -55,11 +58,62 @@ The code is split into multiple files
 Next to the general files, there are several functions that directly interact with the underlying FOF encoding. Currently, only the TPTP3 encoding is fully supported that can be processed by theorem provers like E. The implementation for that is structured as follows:
 \begin{itemize}
 	\item \texttt{tptp.lean}: Summarizes data structures for simple first-order formula and their representation in the TPTP format
-	\item \texttt{translation\_tptp.lean}: Functions for translating expressions into FOF. This include the hammer functions \textit{F}, \textit{C} and \textit{G}. 
-	\item \texttt{simplification\_tptp.lean}: Simplification functions for TPTP encoded first-order formula 
+	\item \texttt{translation\_tptp.lean}: Functions for translating expressions into FOF. This include the hammer functions \F, \C and \G of  \cite{CoqHammer} (described in detail below). 
+	\item \texttt{simplification\_tptp.lean}: Simplification/optimization of terms for TPTP encoded first-order formula. Here for example terms that only occur together (like \texttt{has\_add(nat)}), are replaced with a new constant name.
 \end{itemize}
 
-\subsubsection{Encoding of inductive declarations}
+All the mentioned steps in the previous descriptions will be explained below.
+
+\subsection{Low-level translation}
+
+In this section, the translation of single units (here Lean expressions) is described. This part is highly inspired by \cite{CoqHammer}.
+
+\subsubsection{Translating expressions into intermediate representations}
+\label{sec:term_translation}
+The Coq paper relies on an intermediate representation called $\text{CIC}_0$ in which the DTT expressions are encoded with the help of the functions \F, \C and \G. In this implementation of the Lean hammer, a similar approach is used. The data structures of the intermediate representations, which are closely related to FOL, can be found in \texttt{tptp.lean}. An axiom for example consists of a name and a formula in FOL, which again can consist of multiple formula or terms. The set of all axioms and constants which were introduced in the translation process, are summarized in the data structure \texttt{hammer\_state}. To this structure, axioms are successively added during the translation.\\
+For the export of this data structure to other theorem provers, the function \texttt{to\_format} is defined for the structures \texttt{folform} and \texttt{folterm} which returns the corresponding TPTP FOL representation of the formula/terms as a string. This can be used to export the translated axioms and use them as input to e.g. E \cite{EProver}.\\
+
+The main translation happens in the functions \texttt{hammer\_c}, \texttt{hammer\_g} and \texttt{hammer\_f} which implement \C, \G and \F of \cite{CoqHammer}. In general, the functions have the following purpose:
+\begin{itemize}
+	\item \F encodes propositions as FOL formulas. Therefore, it takes a Lean expression which has to be of type \texttt{Prop} (e.g. \texttt{1+1=2}), and translates it into the previously defined data structures. Note that for expressions that are not propositions, we can only include them as type guard with \G. For more details how declarations/other expressions in Lean are used, see Section~\ref{sec:axiom_expressions}.
+	\item \C takes a Lean expression, and translates it into a FOL term. The function \F makes use of it while translating (e.g. for translating \texttt{1+1=2}, it calls \C on the expression \texttt{1+1} and \texttt{2}).
+	\item \G encodes type guards on FOL terms. This includes for example that \texttt{1} is of type $\mathbb{N}$. The corresponding proposition used for this is noted by $T$ here, and we add new axioms as for example $t(1,\mathbb{N})$. When translating declarations, these guards are used to limits the possible input arguments to which the declaration/function holds. For an example, see Appendix~\ref{sec:fol_examples} formula \texttt{\_fresh.265.4450}. Note that these type constraints get redundant if we use language that include types, as e.g. TF0. 
+\end{itemize}
+
+The implementation of these functions are closely related to the definitions in \cite{CoqHammer}. For details, we refer to the code.
+
+\subsubsection{Term optimizations}
+
+The translation process described in the previous section might be inefficient in some cases. Take for example the number \texttt{2}. From Lean, the expression is translated to:
+
+\begin{verbatim}
+	a(a(a('bit0','nat'),'nat.has_add'),a(a('has_one.one','nat'),'nat.has_one'))
+\end{verbatim}
+
+This term already contains 5 applications, and is most times not necessary.  Therefore, we apply the following simplification rule:
+
+\begingroup
+\leftskip4em\rightskip4em
+For a term \texttt{abc('test', 'c')} where \texttt{abc} is not used anywhere else in combination with variables (neither \texttt{abc('test',V1)}, \texttt{abc(V1,'c')} nor \texttt{abc(V1,V2)}), we can simplify it to a new constant \texttt{'abc\_test\_c')}.
+\par
+\endgroup
+
+An example output for the optimized output is shown in Appendix~\ref{sec:fol_examples_optimized}. Currently, the name is just the concatenation of the term names that were combined for the new constant. To improve readability and guarantee unique term names for any user input, the name generation should be replaced by a combination of unique constant name and a small part for readibility (e.g. \texttt{const\_xxxx\_two\_nat} for the expression of \texttt{2}).
+Further optimization ideas with which this hammer could possibly be extended, are described in Section 5 of \cite{CoqHammer}. 
+
+\subsection{High-level translation}
+
+This section describes the translation process from the perspective of Lean formula/expressions. This includes for example declarations and other expressions that might be necessary for the proof in FOL.
+
+\subsubsection{Encoding axiom expressions}
+\label{sec:axiom_expressions}
+
+Despite the function \F as described in Section~\ref{sec:term_translation}, some expressions in Lean might not be of type \texttt{Prop}. The implementation to this task can be found in \texttt{translate\_axiom\_expression.lean}.
+
+\subsubsection{Encoding inductive declarations}
+
+In case of an inductive declaration, a pre-processing step is required to encode it as a list of axioms (one axiom per constructor). For this, the tactic \texttt{tactic.get\_eqn\_lemmas\_for tt e} is applied on the declaration name \texttt{e} which extracts all equation lemmas for an inductive declaration. In case of the Fibonacci example which is shown in Figure~\ref{fig:fol_example_declaration}, we would therefore get three axioms (which can be seen in Appendix~\ref{sec:fol_examples} axioms \texttt{\_fresh.265.4447}, \texttt{\_fresh.265.4444} and \texttt{\_fresh.265.4437}). Each of these axioms is translated by the procedure described in Section~\ref{sec:axiom_expressions}.
+
 \subsection{Examples}
 The file \texttt{leanhammer.lean} contains a few examples of translating DTT to FOL. For explanation purpose, Figure~\ref{fig:fol_example_declaration} shows a sample translation example where we want to prove that the second Fibonacci number is equals to 2.
 \begin{figure}[ht!]
@@ -84,7 +138,7 @@ The file \texttt{leanhammer.lean} contains a few examples of translating DTT to 
 The main function that is used is \texttt{problem\_to\_tptp\_format}. This function takes as first argument a list of declarations that are eventually relevant for the conjecture and should be included in the translation. In our case, we want to translate the inductive declaration of the Fibonacci numbers as shown in Figure~\ref{fig:fol_example_declaration}. The second argument is a list of expressions that should be translated as clauses. Here, we for example have to define that 0 and 1 are natural numbers. If we would leave these out, we will not be able to find a proof as the clause implementing \texttt{fib} in FOL has as pre-condition that the argument is of type \texttt{nat}. The last expression we enter to the translation process is of course the conjecture. By tracing the output of the function, we see the translated construct in text form, which can be used for other theorem provers. \\
 
 To use this translation, copy output to the file \texttt{test\_problem.tptp} (note that the name of the file can be changed).
-Run a theorem prover like E on this file by executing the command \texttt{./eprover --auto --tptp3-in \textit{file/to/}test\_problem.tptp}. If everything worked out correctly, E finds a proof in a few milliseconds.
+Run a theorem prover like E \cite{EProver} on this file by executing the command \texttt{./eprover --auto --tptp3-in \textit{file/to/}test\_problem.tptp}. If everything worked out correctly, E finds a proof in a few milliseconds.
 \subsection{Open issues}
 \begin{itemize}
 	\item Up till now, the user has to specify by himself which declarations and expressions should be translated besides the conjecture. This process should be automated by a retrieving all possible clauses/declarations that are somehow connected with the conjecture, and then filtering/ranking these to only take the $N$ most relevant ones. Code based on an old version of Lean can be found \href{https://github.com/robertylewis/relevance_filter/tree/dev_lean_reparam}{here}, and the file \texttt{premise\_selection.lean} might be a good starting point.
@@ -104,14 +158,20 @@ To support theorem provers of different input levels (TF0, TF1, TH0, TH1), the g
 	\label{fig:pipeline}
 \end{figure}
 \subsection{Dependent Type Theory to High Order Logic}
-Paper DTT to HOL: \href{https://link.springer.com/chapter/10.1007/BFb0037108}{paper}. We introduce an intermediate data structure based on TH1 which can be parsed. 
+Paper DTT to HOL: \href{https://link.springer.com/chapter/10.1007/BFb0037108}{paper} \cite{DTT2HOL}. We introduce an intermediate data structure based on TH1 which can be parsed. 
 \subsection{High Order Logic to Boolean-free HOL}
 \subsection{Boolean-free HOL to $\lambda$-free HOL}
 \subsection{$\lambda$-free HOL to FOL}
 \subsection{FOL to monomorphic FOL}
 
+\bibliographystyle{plain}
+\bibliography{references.bib}
 \appendix
 \section{FOL examples}
+\label{sec:fol_examples}
+The non-optimized output for the example of proving that \texttt{fib 2 = 2} is shown below:
+
+\footnotesize
 \begin{verbatim}
 fof('_fresh.265.4460',
 axiom,
@@ -228,5 +288,101 @@ a(a('has_one.one',
 a(a('has_one.one',
 'nat'),
 'nat.has_one'))))).
+\end{verbatim}
+
+\normalsize
+\subsection{Optimized FOL export}
+\label{sec:fol_examples_optimized}
+The optimized version get rids of some constant term applications, and replaces it with a new name. For debugging purpose, the names are right now the concatenation of the term names that were combined for the new constant:
+
+\footnotesize
+\begin{verbatim}
+fof('_fresh.325.1061',
+axiom,
+(t('const_.a_.a_.c_.has_one.one.-.c_.nat.-.c_.nat.has_one',
+'nat'))).
+
+fof('_fresh.325.1060',
+axiom,
+(t('const_.a_.a_.c_.has_zero.zero.-.c_.nat.-.c_.nat.has_zero',
+'nat'))).
+
+fof('_fresh.325.1056',
+axiom,
+(('const_.a_.a_.a_.c_.bit0.-.c_.nat.-.c_.nat.has_add.-.c_.const_.a_.a_.c_.has_one.one.-.c_.nat.-.c_.nat.has_one'
+= a('nat.succ',
+'const_.a_.a_.c_.has_one.one.-.c_.nat.-.c_.nat.has_one')))).
+
+fof('_fresh.325.1055',
+axiom,
+(t(a('nat.succ',
+'const_.a_.a_.c_.has_one.one.-.c_.nat.-.c_.nat.has_one'),
+'nat'))).
+
+fof('_fresh.325.1054',
+axiom,
+(('const_.a_.a_.c_.has_one.one.-.c_.nat.-.c_.nat.has_one'
+= a('nat.succ',
+'const_.a_.a_.c_.has_zero.zero.-.c_.nat.-.c_.nat.has_zero')))).
+
+fof('_fresh.325.1053',
+axiom,
+(t(a('nat.succ',
+'const_.a_.a_.c_.has_zero.zero.-.c_.nat.-.c_.nat.has_zero'),
+'nat'))).
+
+fof('_fresh.325.1051',
+axiom,
+(! [V1 /* _fresh.325.1052 */] :
+((t(V1,
+'nat'))
+=> ((a(a('const_.a_.a_.c_.has_add.add.-.c_.nat.-.c_.nat.has_add',
+V1),
+'const_.a_.a_.c_.has_one.one.-.c_.nat.-.c_.nat.has_one')
+= a('nat.succ',
+V1)))))).
+
+fof('_fresh.325.1048',
+axiom,
+(! [V1 /* _fresh.325.1049 */] :
+((t(V1,
+'nat'))
+=> (t(a('fib',
+V1),
+'nat'))))).
+
+fof('_fresh.325.1045',
+axiom,
+((a('fib',
+'const_.a_.a_.c_.has_zero.zero.-.c_.nat.-.c_.nat.has_zero')
+= 'const_.a_.a_.c_.has_one.one.-.c_.nat.-.c_.nat.has_one'))).
+
+fof('_fresh.325.1042',
+axiom,
+((a('fib',
+'const_.a_.a_.c_.has_one.one.-.c_.nat.-.c_.nat.has_one')
+= 'const_.a_.a_.c_.has_one.one.-.c_.nat.-.c_.nat.has_one'))).
+
+fof('_fresh.325.1035',
+axiom,
+(! [V1 /* _fresh.325.1036 */] :
+((t(V1,
+'nat'))
+=> ((a('fib',
+a('nat.succ',
+a('nat.succ',
+V1)))
+= a(a('const_.a_.a_.c_.has_add.add.-.c_.nat.-.c_.nat.has_add',
+a('fib',
+V1)),
+a('fib',
+a('nat.succ',
+V1)))))))).
+
+fof('problem_conjecture',
+conjecture,
+((a('fib',
+'const_.a_.a_.a_.c_.bit0.-.c_.nat.-.c_.nat.has_add.-.c_.const_.a_.a_.c_.has_one.one.-.c_.nat.-.c_.nat.has_one')
+= 'const_.a_.a_.a_.c_.bit0.-.c_.nat.-.c_.nat.has_add.-.c_.const_.a_.a_.c_.has_one.one.-.c_.nat.-.c_.nat.has_one'))).
 \end{verbatim}
 \end{document}
