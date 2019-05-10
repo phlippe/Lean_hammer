@@ -1,6 +1,9 @@
 import .tptp.tptp 
 import .tptp.translation_tptp
 import .tptp.simplification_tptp
+-- import .tff.tff
+-- import .tff.translation_tff
+-- import .tff.simplification_tff
 
 --##################################
 --## 5.3 Translating declarations ##
@@ -36,6 +39,7 @@ meta def translate_axiom_expression: expr → hammer_tactic unit
                 then 
                   do  xn ← mk_fresh_name,
                       let f := folterm.lconst xn xn,
+                      -- let f := folterm.lconst xn (foltype.from_name xn),
                       -- a <- wrap_quantifier folform.all [(xn, xn)] (folform.iff (hammer_c $ folterm.app c f) (hammer_g f r)),
                       -- TODO: Implement the correct formula
                       let a := folform.top,
@@ -100,9 +104,14 @@ meta def process_declarations : list name → hammer_tactic unit
 -- TODO: inductive declarations work, but not simple declarations! We get lambda expressions but need pi expression with equality
 
 meta def expr_in_parts : expr → tactic expr 
-| e@(expr.lam n b a c) := do tactic.trace n, tactic.trace a, tactic.trace a, tactic.trace c, return $ expr.pi n b a c
-| e@(expr.pi n b a c) := do tactic.trace n, tactic.trace a, tactic.trace a, tactic.trace c, return $ expr.lam n b a c
-| e := return e
+| e@(expr.lam n b a c) := do tactic.trace ("Lambda expression with var " ++ name.to_string n ++ " and type "), tactic.trace a, new_c <- (expr_in_parts c), return $ e
+| e@(expr.pi n b a c) := do tactic.trace ("Pi expression with var " ++ name.to_string n ++ " and type "), tactic.trace a, new_c <- (expr_in_parts c), return $ e
+| e@(expr.const n _) := do tactic.trace ("Constant with name " ++ name.to_string n), return $ e
+| e@(expr.app t1 t2) := do tactic.trace ("Application"), new_t1 <- expr_in_parts t1, new_t2 <- expr_in_parts t2, return $ e
+| e@(expr.local_const n n1 _ _) := do tactic.trace ("Local constant with name " ++ name.to_string n ++ " and second name " ++ name.to_string n1), return $ e
+| e@(expr.elet x τ t s) := do tactic.trace ("Let expression"), return e
+| e@(expr.var n) := do tactic.trace ("Variable "), tactic.trace n, return $ e
+| e := do tactic.trace ("Unknown expression"), tactic.trace e, return e
 
 
 --###############################
@@ -121,10 +130,18 @@ meta def translate_problem: list name → list expr → hammer_tactic unit
 | [] (x::xs) := do translate_axiom_expression x, translate_problem [] xs
 | (y::ys) xs := do translate_declaration y, translate_problem ys xs
 
-meta def problem_to_format (declr: list name) (clauses: list expr) (conjecture: expr) : hammer_tactic format := 
+meta def problem_to_tptp_format (declr: list name) (clauses: list expr) (conjecture: expr) : hammer_tactic format := 
   do  
     ⟨cl,cl_state⟩ <- using_hammer (translate_problem declr clauses),
     ⟨conj,conj_state⟩ <- using_hammer (hammer_f conjecture),
     ⟨cl_list,conj⟩ <- simplify_terms (hammer_state.axiomas cl_state) conj,
-    -- ⟨cl_list,conj⟩ <- simplify_terms cl_list conj, -- TODO: Fix problem of not getting all simplifications in the first run (see function comments)
-    return $ to_tptp cl_list conj
+    -- let cl_list := (hammer_state.axiomas cl_state), -- For debugging, if no simplification should be applied
+    return $ export_formula cl_list conj
+
+-- meta def problem_to_tff_format (declr: list name) (clauses: list expr) (conjecture: expr) : hammer_tactic format := 
+--   do  
+--     ⟨cl,cl_state⟩ <- using_hammer (translate_problem declr clauses),
+--     ⟨conj,conj_state⟩ <- using_hammer (hammer_f conjecture),
+--     ⟨td_list,cl_list,conj⟩ <- simplify_terms (hammer_state.type_definitions cl_state) (hammer_state.axiomas cl_state) conj,
+--     -- ⟨cl_list,conj⟩ <- simplify_terms cl_list conj, -- TODO: Fix problem of not getting all simplifications in the first run (see function comments)
+--     return $ export_formula td_list cl_list conj

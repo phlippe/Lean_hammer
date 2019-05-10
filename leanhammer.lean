@@ -1,8 +1,8 @@
 import system.io
-import .tptp.tptp
+-- import .tptp.tptp
 import .premise_selection
-import .tptp.simplification_tptp 
-import .tptp.translation_tptp
+-- import .tptp.simplification_tptp 
+-- import .tptp.translation_tptp
 import .problem_translation
 
 --#################
@@ -34,22 +34,28 @@ run_cmd do l ← tactic.get_decl `fib, tactic.trace l.value
 run_cmd do process_declarations [`sum_two]
 -- run_cmd do def_lemmas <- simp_lemmas.mk_default, d ← tactic.get_decl `sum_two, tactic.trace d.value, e <- def_lemmas.dsimplify [`sum_two] d.value, tactic.trace e
 -- run_cmd do d <- simp_lemmas.mk_default, l ← tactic.get_decl `sum_two, a <- simp_lemmas.add d l.value, e <- simp_lemmas.rewrite d l.value, tactic.trace e
-run_cmd do e <- expr_in_parts `(Π (x:ℕ), x=1), tactic.trace e
+run_cmd do e <- expr_in_parts `(λ (x:ℕ), x=(λ(y:ℕ),y+x)5), tactic.trace e
 
 run_cmd do l ← tactic.get_decl `abc, tactic.trace l.type, tactic.trace l.is_definition, l ← tactic.get_eqn_lemmas_for ff `abc, tactic.trace l
 
-run_cmd do (contents, features, ⟨n, names⟩) ← get_all_decls,
-            tactic.trace $ nearest_k_of_name `sum_two  contents features names 100
+-- run_cmd do (contents, features, ⟨n, names⟩) ← get_all_decls,
+--             tactic.trace $ nearest_k_of_name `sum_two  contents features names 100
 
 -- == SMALL PROBLEM TRANSLATION ==
-run_cmd do ⟨f, _⟩ <- using_hammer $ problem_to_format [] [`(Π(x:ℕ), nat.succ x = x + 1), `(1 : nat), `(1+1 = 2)] `(not (1+1 = 2)),
+run_cmd do ⟨f, _⟩ <- using_hammer $ problem_to_tptp_format [] [`(Π(x:ℕ), nat.succ x = x + 1), `(1 : nat), `(1+1 = 2)] `((1+1 = 2)),
            tactic.trace f 
            
 -- == EXAMPLE PROBLEM TRANSLATION == 
-run_cmd do ⟨f,_⟩ <- using_hammer $ problem_to_format [`fib2, `sum_two] 
+run_cmd do ⟨f,_⟩ <- using_hammer $ problem_to_tptp_format [`fib2, `sum_two] 
                                                      [`(Π(x:ℕ), x + 1 = nat.succ x), `(Π(x y:ℕ),nat.succ x + y = nat.succ (x + y)), `(Π(x y:ℕ),x + y = y + x), `(nat.succ 0 = 1), `(nat.succ 1 = 2), `(nat.succ 2 = 3), `(nat.succ 3 = 4), `(nat.succ 4 = 5), `(nat.succ 5 = 6), `(nat.succ 6 = 7), `(nat.succ 7 = 8), `(0:ℕ), `(1:ℕ), `(2:ℕ), `(3:ℕ), `(4:ℕ), `(5:ℕ), `(6:ℕ), `(7:ℕ), `(8:ℕ)] -- , `(0:ℕ), `(1:ℕ), `(2:ℕ), `(3:ℕ), `(4:ℕ), `(5:ℕ), `(6:ℕ), `(7:ℕ), `(8:ℕ), `(Π x y : ℕ, sum_two x y =x+y)
                                                      `((fib2 5 = 8)), 
            tactic.trace f 
+
+run_cmd do ⟨f,_⟩ <- using_hammer $ problem_to_tptp_format [`fib] 
+                        [`(Π(x:ℕ), x + 1 = nat.succ x), `(nat.succ 0 = 1), `(nat.succ 1 = 2), `(0:ℕ), `(1:ℕ)]       -- , `(0:ℕ), `(1:ℕ), `(2:ℕ), `(3:ℕ), `(4:ℕ), `(5:ℕ), `(6:ℕ), `(7:ℕ), `(8:ℕ), `(Π x y : ℕ, sum_two x y =x+y)
+                        `((fib 2 = 2)), 
+           tactic.trace f 
+--   , `(Π(x y:ℕ),nat.succ x + y = nat.succ (x + y)), `(Π(x y:ℕ),x + y = y + x) 
 
 
 -- =================

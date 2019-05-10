@@ -6,7 +6,7 @@ state_t.monad
 meta instance (α : Type) : has_coe (tactic α) (hammer_tactic α) :=
 ⟨state_t.lift⟩
 
-
+-- Extracting state from tactic
 meta def using_hammer {α} (t : hammer_tactic α) : tactic (α × hammer_state) :=
 do let ss := hammer_state.mk [] [],
    state_t.run t ss -- (do a ← t, return a) 
@@ -14,17 +14,21 @@ do let ss := hammer_state.mk [] [],
 meta def when' (c : Prop) [decidable c] (tac : hammer_tactic unit) : hammer_tactic unit :=
 if c then tac else tactic.skip
 
+-- Checks if expression is a proposition
 meta def lives_in_prop_p (e : expr) : hammer_tactic bool :=
 do tp ← tactic.infer_type e,
    return (if eq tp (expr.sort level.zero) then tt else ff)
 
+-- Checks if expression is a type
 meta def lives_in_type (e : expr) : hammer_tactic bool :=
 do tp ← tactic.infer_type e,
    return (if eq tp (expr.sort (level.succ (level.succ level.zero))) then tt else ff)
 
+-- Adding new axiom to current state
 meta def add_axiom (n : name) (axioma : folform) : hammer_tactic unit :=
 do state_t.modify (fun state, {state with axiomas := ⟨n, axioma⟩ :: state.axiomas})
 
+-- Adding new constant to current state
 meta def add_constant (n : name) (e : expr) : hammer_tactic unit :=
 do state_t.modify (fun state, {state with introduced_constants := ⟨n, e⟩ :: state.introduced_constants })
 
@@ -32,7 +36,6 @@ do state_t.modify (fun state, {state with introduced_constants := ⟨n, e⟩ :: 
 -- might want to do something different
 meta def mk_fresh_name : tactic name := tactic.mk_fresh_name
 
--- 
 meta def body_of : expr → hammer_tactic (expr × name)
 | e@(expr.pi n bi d b) := do id ← mk_fresh_name,
                              let x := expr.local_const id n bi d,
@@ -64,6 +67,7 @@ do  exprs ← list.mfilter
         ⟨n, n1⟩ :: a)
       [] exprs 
 
+-- Helper functions for dealing with variables
 meta def wrap_quantifier (binder : name → name → folform → folform) (ns : list $ name × name) (f : folform) : folform :=
 list.foldr
   (λ (np : name × name) f, binder np.1 np.2 f)
@@ -76,6 +80,8 @@ meta def collect_lambdas_aux :
 | (e@(expr.lam n _ t _), l) := do (b, xn) ← body_of e, collect_lambdas_aux (b, (xn, n, t) :: l)
 | a := return a
 
+-- When an inductive declaration is translated, Lean adds the suffix "._main" to the name. However, in other expressions, the function is used without the "._main" suffix.
+-- To use the same name for the same functions at different places, we remove this suffix here.
 meta def remove_suffix_of_string : list char → list char 
 | ['.','_','m','a','i','n'] := []
 -- | ('.' :: '_' :: b) := [] -- What about other suffixes than main?
@@ -147,9 +153,9 @@ with hammer_c : expr → hammer_tactic folterm
       α ← tactic.infer_type t, -- Infer the type of t given all lambda expression (Γ,x:τ|-t:α)
       let yρs := hammer_fc e, -- y: ρ = FC(Γ;λx:τ.t) - Get list of free constants in e
       Fn ← mk_fresh_name, -- Fresh constant name
-      let An := n ++ Fn, -- ??? Add new constant name to list of current constants(?)
-      y₀s ← hammer_ff yρs, -- 
-      x₀s ← hammer_ff xτs, -- 
+      let An := n ++ Fn, -- Add new constant name to list of current constants
+      y₀s ← hammer_ff yρs,
+      x₀s ← hammer_ff xτs, 
       let Ft :=
         list.foldr
           (λ (nt : name × name × expr) a,
@@ -164,7 +170,7 @@ with hammer_c : expr → hammer_tactic folterm
           (λ (a : expr) (nt : name × name × expr), (a (expr.local_const nt.1 nt.2.1 binder_info.default nt.2.2)))
           F
           $ yρs ++ xτs,  
-      -- TODO two approaches:
+          
       my_eq ← tactic.mk_const `eq,
       my_iff ← tactic.mk_const `iff,
       lip ← lives_in_prop_p ce1a,
@@ -220,10 +226,8 @@ with hammer_c : expr → hammer_tactic folterm
 -- TODO: Check if those need to be implemented as well
 | e@(expr.var _) := -- do tactic.trace e, 
                     undefined
--- NEED TO BE IMPLEMENTED
-| e@(expr.sort _) := do tactic.trace e, 
+| e@(expr.sort _) := -- do tactic.trace e, 
                      undefined
-                     -- hammer_c `(5)
 | e@(expr.mvar _ _ _) := -- do tactic.trace e, 
                          undefined
 | e@(expr.macro _ _) := -- do tactic.trace e, 
@@ -255,9 +259,10 @@ with hammer_g : folterm → expr → hammer_tactic folform
 
 -- Define function F (encodes propositions as FOL formulas)
 with hammer_f : expr → hammer_tactic folform 
+-- Pi notations are translated as ∀x
 | e@(expr.pi n _ t _) :=
   do  lip ← lives_in_prop_p t,
-      if lip 
+      if lip -- If t is prop, we can translate it more efficiently (t → s)
       then
         do  fe1 ← (hammer_f t),
             (s, _) ← body_of e,
@@ -268,8 +273,7 @@ with hammer_f : expr → hammer_tactic folform
             fe1 ← hammer_g (folterm.lconst xn n) t,
             fe2 ← hammer_f s,
             return $ wrap_quantifier folform.all [(xn, n)] (folform.imp fe1 fe2)
--- For all is eventually missing. How to implement? It must be forwarded to second case of expr.pi
---| e@`(@Forall %%t %%ps) := 
+-- Translating ∃x relation
 | e@`(@Exists %%t %%ps) := -- we cannot assume that ps has the shape of a lambda
   do  xn ← mk_fresh_name,
       let lc := expr.local_const xn xn binder_info.default t,
@@ -277,21 +281,26 @@ with hammer_f : expr → hammer_tactic folform
       fe1 ← hammer_g (folterm.lconst xn xn) t,
       fe2 ← hammer_f s,
       return $ wrap_quantifier folform.exist [(xn, xn)] (folform.conj fe1 fe2) 
+-- Translating conjunction
 | e@`(and %%t %%s) :=
   do  fe1 ← hammer_f t,
       fe2 ← hammer_f s,
       return $ folform.conj fe1 fe2
+-- Translating disjunction
 | `(or %%t %%s) :=
   do  fe1 ← hammer_f t,
       fe2 ← hammer_f s,
       return $ folform.disj fe1 fe2
+-- Translating two-sided implication A⇄B
 | `(iff %%t %%s) :=
   do  fe1 ← hammer_f t,
       fe2 ← hammer_f s,
-      return $ folform.iff fe1 fe2                       
+      return $ folform.iff fe1 fe2   
+-- Translating negation                    
 | `(not %%t) :=
   do  fe1 ← hammer_f t,
       return $ folform.neg $ fe1  
+-- Translating equality
 | `(%%t = %%s) :=
   do  fe1 ← hammer_c t,
       fe2 ← hammer_c s,

@@ -273,12 +273,12 @@ to_fmt "fof("
   [to_fmt id, to_fmt r, "(" ++ (mygroup $ nest 1 $ to_fmt f) ++ ")"]) ++ to_fmt ")." -- Output: fof(name, role, (formula)).
   
 -- Combine list of axioma into single string
-meta def to_tptp : list axioma → folform → format
+meta def export_formula : list axioma → folform → format
 | (⟨n, f⟩::as) conjecture := 
   to_fof ("'" ++ to_string n ++ "'") role.axioma f
      ++ line
      ++ line
-     ++ to_tptp as conjecture
+     ++ export_formula as conjecture
 | [] conjecture := to_fof "'problem_conjecture'" role.conjecture conjecture
 
 -- What do we need this constant for?
