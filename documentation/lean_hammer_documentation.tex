@@ -42,7 +42,22 @@ citecolor = black]{hyperref} % For hyperlinks in the PDF
 \tableofcontents
 \newpage
 
+\section*{General remarks}
+This documentation contains a description of a hammer designed for the Dependent Type Theory of Lean. The aim is to use fast theorem provers of lower-level logics (like FOL, TH0 etc.) to support the user of finding proofs in Lean. \\
+
+The current code can be found on this github repository \href{https://github.com/phlippe/Lean_hammer}{https://github.com/phlippe/Lean\_hammer}. It is recommended to take a look at the code while reading this documentation. The code is commented for giving low-level details, but the high-level overview can be found in this documentation.\\
+
+\subsection*{Overview}
+
+In general, there are two development branches for the Lean hammer. When this project started, we focused on a similar approach to which is already implemented in the Coq proof assistant \cite{CoqHammer}. In there, we have a pipeline designed for translating Dependent Type Theory to First-order logic with equality. This approach is described in Section~\ref{sec:specific_pipeline_DTT_FOL}.\\
+The second approach, which was introduced later and is still in construction, is designing a pipeline which allows a step-wise translation to FOL where we can stop at any time. Thereby, we would first translate DTT to e.g. the high-order logic TH1. This can be translated to e.g. TH0 or TF1, and finally we end up in TF0 or plain FOL. This would allow us to use a much greater variety of theorem provers, and maybe makes the translation process more tractable. The current state of this idea is presented in Section~\ref{sec:general_pipeline}. 
+
+\subsection*{Contact}
+If you have any questions about the code/design/etc., do not hesitate to contact me by \href{mailto:phillip.lippe@googlemail.com}{phillip.lippe@googlemail.com}.
+
+\newpage
 \section{Specific pipeline DTT to FOL}
+\label{sec:specific_pipeline_DTT_FOL}
 \subsection{Approach}
 The first version of the Lean hammer implements a direct translation from DTT to FOL. The approach follows the \href{https://link.springer.com/article/10.1007/s10817-018-9458-4}{Coq hammer paper} \cite{CoqHammer} by introducing an intermediate representation. Details are explained along the code description.
 % \subsection{Implementation}
@@ -108,7 +123,8 @@ This section describes the translation process from the perspective of Lean form
 \subsubsection{Encoding axiom expressions}
 \label{sec:axiom_expressions}
 
-Despite the function \F as described in Section~\ref{sec:term_translation}, some expressions in Lean might not be of type \texttt{Prop}. The implementation to this task can be found in \texttt{translate\_axiom\_expression.lean}.
+Despite the function \F as described in Section~\ref{sec:term_translation}, some expressions in Lean might not be of type \texttt{Prop}. The implementation to this task can be found in the function \texttt{translate\_axiom\_expression} in the file \texttt{translate\_axiom\_expression.lean}. In general, we translate expressions that are not of type \texttt{Prop} to type guard expressions. For example, the expression $1 : \mathbb{N}$ would be translated to $t(1, \mathbb{N})$.\\
+We also take care of equality relations. An expressions that states $a=b$ in Lean will be translated in the same formula in FOL, but we apply \C on both the left and the right term.
 
 \subsubsection{Encoding inductive declarations}
 
@@ -149,7 +165,15 @@ Run a theorem prover like E \cite{EProver} on this file by executing the command
 	\item In relation to the previous points, once the IO communication with the theorem provers is automated, a proof reconstruction needs to be implemented. This would help the user to understand the proof, and provide him a way of implementing this proof in Lean.
 	\item Another missing point is the translation of inductive types like \texttt{list}. Currently, these types are not supported.
 \end{itemize}
+
+
+%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%
+
+\newpage
 \section{General pipeline}
+\label{sec:general_pipeline}
 To support theorem provers of different input levels (TF0, TF1, TH0, TH1), the generalized version of the Lean hammer is planed to follow a pipeline which successively translates the Dependent Type Theory to FOL. The pipeline is visualized in Figure~\ref{fig:pipeline}.
 \begin{figure}[ht!]
 	\centering
@@ -164,8 +188,10 @@ Paper DTT to HOL: \href{https://link.springer.com/chapter/10.1007/BFb0037108}{pa
 \subsection{$\lambda$-free HOL to FOL}
 \subsection{FOL to monomorphic FOL}
 
+\newpage
 \bibliographystyle{plain}
 \bibliography{references.bib}
+
 \appendix
 \section{FOL examples}
 \label{sec:fol_examples}
