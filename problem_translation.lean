@@ -34,7 +34,7 @@ meta def translate_axiom_expression: expr → hammer_tactic unit
                   Cn ← mk_fresh_name,
                   add_axiom Cn (folform.iff fe1 fe2)
             else -- Otherwise, check whether τ is from type Set or Type, or another type
-              do  lis <- lives_in_type r, -- WRONG IMPLEMENTATION! TODO: Implement check of τ for Set and Type!
+              do  lis <- lives_in_type r, -- TODO: Implement check of τ for Set and Type!
                 if lis
                 then 
                   do  xn ← mk_fresh_name,
