@@ -182,7 +182,43 @@ To support theorem provers of different input levels (TF0, TF1, TH0, TH1), the g
 	\label{fig:pipeline}
 \end{figure}
 \subsection{Dependent Type Theory to High Order Logic}
-Paper DTT to HOL: \href{https://link.springer.com/chapter/10.1007/BFb0037108}{paper} \cite{DTT2HOL}. We introduce an intermediate data structure based on TH1 which can be parsed. 
+The first step of our pipeline is parsing the Dependent Type Theory of Lean to TH1. We decided to take TH1 as highest-level language as most high-order theorem prover can deal with this language. This section first describes the data structures itself, and then continues with discussing the translation process.
+
+\subsubsection{Data structures} 
+\begin{description}
+	\item[holtype] The data structure \texttt{holtype} represents type expressions in TH1. The following types are distinguished:
+	\begin{itemize}
+		\item The standard types \texttt{\$o} (boolean), \texttt{\$i} (int) and \texttt{\$type} (type class) are implemented as constants
+		\item Local types can be created by \texttt{ltype}. It is intended that these types are applied when using previously defined types in axioms. Example:
+		\begin{verbatim}
+			thf(bird_type, type, (bird : $tType)).
+			thf(tweety_type, type, (tweety: bird)).
+			...
+		\end{verbatim}
+		The usage of \texttt{bird} in the second type definition should be done by \texttt{ltype}. Note that the usage of \texttt{bird} in the first line is not included in a \texttt{holtype} data item, but in a full \texttt{type\_definition}. 
+		\item \texttt{functor} provides support for defining functions with multiple parameters. Example:
+		\begin{verbatim}
+		thf(map_type, type, (map : $tType > $tType > $tType)).
+		\end{verbatim}
+		The functor type should be defined as:
+		\begin{verbatim}
+		holtype.functor [holtype.type, holtype.type] holtype.type
+		\end{verbatim}
+		Note that we use a list instead of a recursive structure in order to simplify encodings for other logic levels. In TF0 and TF1, we for example have to write: 
+		\begin{verbatim}
+		tff(map_type, type, (map : ($tType * $tType) > $tType)).
+		\end{verbatim}
+		\item The deep binder option is thought to be used for type signatures with type arguments. An example use-case is:
+		\begin{verbatim}
+		thf(bird_lookup_type, type, (bird_lookup: !>[A:$tType, B:$tType] : ((map@A@B) > A > B))).
+		\end{verbatim}
+		\item At last, we also need to support partial applications as term arguments. Thus, in the previous example, \texttt{map@A@B} should be encoded by \texttt{holtype.partial\_app}.
+	\end{itemize}
+	\item[holterm] Type
+	\item[holform] Type
+\end{description}
+\subsubsection{Translation}
+\textcolor{red}{In progress} (see this \href{https://link.springer.com/chapter/10.1007/BFb0037108}{paper} for translation of DTT to HOL \cite{DTT2HOL}). 
 \subsection{High Order Logic to Boolean-free HOL}
 \subsection{Boolean-free HOL to $\lambda$-free HOL}
 \subsection{$\lambda$-free HOL to FOL}

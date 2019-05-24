@@ -47,8 +47,22 @@ meta structure introduced_constant := -- Structure representing a new constant i
 meta structure axioma := -- Note: axiom is reserved word in Lean, thus the additional a
 (n : name) (f : holform) -- Every axiom is specified by a name and its formula
 
+meta structure type_def := 
+(def_name : name) (type_name : name) (t : holtype)
+
+meta inductive role -- Role of a formula. Can be either axiom, definition or conjecture
+| axioma : role
+| r_definition : role -- Keyword "definition" already used in Lean
+| conjecture : role
+
+meta def role.to_format : role → format
+| role.axioma := to_fmt "axiom"
+| role.r_definition := to_fmt "definition"
+| role.conjecture := to_fmt "conjecture"
+
 meta structure hammer_state := -- Structure representing the state of the hammer (list of axioms with corresponding list of newly introduced constants for translation)
 (axiomas : list axioma)
+(type_definitions : list type_def)
 (introduced_constants : list introduced_constant)
 
 meta def hammer_tactic :=
@@ -146,8 +160,8 @@ with holtype.to_format_aux : holtype → ℕ → format
 | e@(holtype.i) _ := "$i"
 | e@(holtype.type) _ := "$tType"
 | e@(holtype.ltype n) _ := to_fmt n
-| e@(holtype.functor ts t) depth :=  (holtype_list_to_format ts depth 0 ">") ++ " > " ++ t.repr
-| e@(holtype.dep_binder ts t) depth := "!>[" ++ holtype_cross_list_to_format ts depth 0 "," ++ "] : (" ++ t.repr ++ ")"
+| e@(holtype.functor ts t) depth :=  (holtype_list_to_format ts depth 0 ">") ++ " > " ++ t.to_format_aux depth
+| e@(holtype.dep_binder ts t) depth := "!>[" ++ holtype_cross_list_to_format ts depth 0 "," ++ "] : (" ++ t.to_format_aux depth ++ ")"
 | e@(holtype.partial_app t) depth := "(" ++ t.to_format_aux depth ++ ")"
 
 with holterm.to_format_aux : holterm → ℕ → format 
@@ -181,14 +195,42 @@ meta def holtype.to_format (t : holtype) : format := t.to_format_aux 0
 meta def holterm.to_format (t : holterm) : format := t.to_format_aux 0 
 meta def holform.to_format (f : holform) : format := f.to_format_aux 0 
 
+-- Convert formula with name and role to output string
+meta def axiom_to_thf (id : string) (r : role) (f : holform) : format :=
+    to_fmt "thf(" ++ to_fmt id ++ "," ++ r.to_format ++ ",(" ++ f.to_format ++ "))."
+  
+-- Convert formula with name and role to output string
+meta def typedef_to_thf (id : string) (type_name : name) (t : holtype) : format :=
+    to_fmt "thf(" ++ to_fmt id ++ ",type,(" ++ to_fmt type_name ++ " : " ++ t.to_format ++ "))."
+  
+-- Combine list of axioma, type definitions and conjecture into single string
+meta def export_formula : list type_def → list axioma → holform → format
+| (⟨def_n, type_n, t⟩::tds) axiomas conjectures := 
+  typedef_to_thf ("'" ++ to_string def_n ++ "'") type_n t
+     ++ "\n\n"
+     ++ export_formula tds axiomas conjectures
+| [] (⟨n, f⟩::as) conjecture := 
+  axiom_to_thf ("'" ++ to_string n ++ "'") role.axioma f
+     ++ "\n\n"
+     ++ export_formula [] as conjecture
+| [] [] conjecture := axiom_to_thf "'problem_conjecture'" role.conjecture conjecture
 
 ---------------------
 -- DEBUG FUNCTIONS --
 ---------------------
 meta def example_formula : holform :=
-holform.all `test holtype.o $ 
+holform.all `test (holtype.ltype `myType) $ 
     holform.eq
         (holterm.app (holterm.app (holterm.const `h1) (holterm.const `h2)) (holterm.const `test))
         (holterm.var 1)
 
+meta def example_type : holtype :=
+holtype.dep_binder [(`A, holtype.o), (`B, holtype.i)] $
+    holtype.functor [holtype.partial_app (holterm.app (holterm.const `map) (holterm.const `A)), holtype.ltype `B] holtype.type
+
+meta def example_axiom : axioma := ⟨`test_axiom, example_formula⟩
+meta def example_type_def : type_def := ⟨`test_type_def, `myType, example_type⟩
+
 run_cmd do tactic.trace example_formula.to_format
+run_cmd do tactic.trace example_type.to_format
+run_cmd do tactic.trace $ export_formula [example_type_def] [example_axiom] example_formula
