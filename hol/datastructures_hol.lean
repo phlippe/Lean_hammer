@@ -1,18 +1,17 @@
-
-
-meta inductive holtype 
+meta mutual inductive holtype, holterm 
+with holtype : Type
 | o : holtype -- Boolean (predefined TFF $o) 
 | i : holtype -- Individual (predefined TFF $i, default type)
 | type : holtype -- Type (predefined TFF $tType)
 | ltype : name → holtype -- Self-specified type
 | functor : list holtype → holtype → holtype 
 -- binder !> in HOL (example: !>[A: $tType, B: $tType] : ((map@A@B) > A > B))  where map : $tType > $tType > $tType
-| dep_binder : list holtype → holtype → holtype -- We only encode !>[A: $tType, B: $tType] by the first list. Afterwards, it can be any holtype
--- Necessary? Should for example encode "map@A@B" as stated above
-| partial_app : name → holtype
+| dep_binder : list (name × holtype) → holtype → holtype -- We only encode !>[A: $tType, B: $tType] by the first list. Afterwards, it can be any holtype
+-- Should for example encode "map@A@B" as stated above
+| partial_app : holterm → holtype
 
 -- Problem: dependencies to each other...
-meta inductive holterm
+with holterm : Type
 | const : name → holterm -- Constant with given label
 | lconst : name → holtype → holterm -- Second term should rather by holtype
 | prf : holterm
@@ -20,8 +19,10 @@ meta inductive holterm
 | app : holterm → holterm → holterm -- @(t,s) is the same as t s => apply t on input s
 -- Encode λ-expressions explicitly
 | lambda : nat → holtype → holterm → holterm
-| pi : nat → holtype → holterm → holterm
+-- Pi expression should not be necessary/implemented in TH1?
+-- | pi : nat → holtype → holterm → holterm
 -- Boolean constant
+-- TODO: Do we need them here for the predefined TFF $0 ?
 | top : holterm
 | bottom : holterm
 
@@ -80,10 +81,25 @@ meta def holform.abstract_locals_core : holform → nat → list name → holfor
 
 meta def holform.abstract_locals : holform → list name → holform := λ f l, f.abstract_locals_core 0 l
 
-meta def holtype.repr : holtype → string 
-| t := "Test"
+meta mutual def holtype_list_to_repr, holtype_cross_list_to_repr, holtype.repr, holterm.repr
+with  holtype_list_to_repr : list holtype → string 
+| (x :: xs) := x.repr ++ " " ++ (holtype_list_to_repr xs)
+| [] := ""
 
-meta def holterm.repr : holterm → string
+with  holtype_cross_list_to_repr : list (name × holtype) → string 
+| ((n,x) :: xs) := name.to_string n ++ ":" ++ x.repr ++ " " ++ (holtype_cross_list_to_repr xs)
+| [] := ""
+
+with holtype.repr : holtype → string 
+| e@(holtype.o) := "(holtype.o)"
+| e@(holtype.i) := "(holtype.i)"
+| e@(holtype.type) := "(holtype.type)"
+| e@(holtype.ltype n) := "(holtype.ltype " ++ name.to_string n ++ ")"
+| e@(holtype.functor ts t) := "(holtype.functor [" ++  holtype_list_to_repr ts ++ "] " ++ t.repr ++ ")"
+| e@(holtype.dep_binder ts t) := "(holtype.dep_binder [" ++ holtype_cross_list_to_repr ts ++ "] " ++ t.repr ++ ")"
+| e@(holtype.partial_app t) := "(holtype.partial_app " ++ t.repr ++ ")"
+
+with holterm.repr : holterm → string
 | e@(holterm.const n) := "(holterm.constant " ++ name.to_string n ++ ")"
 | e@(holterm.lconst n t) := "(holterm.local_const " ++ name.to_string n ++ holtype.repr t ++ ")"
 | e@(holterm.prf) := "(holterm.prf)"
@@ -91,7 +107,88 @@ meta def holterm.repr : holterm → string
 | e@(holterm.app t1 t2) := "(holterm.app " ++ holterm.repr t1 ++ " " ++ holterm.repr t2 ++ ")"
 -- Encode λ-expressions explicitly
 | e@(holterm.lambda n ty t) := "(holterm.lambda " ++ repr n ++ " " ++ holtype.repr ty ++ " " ++ holterm.repr t ++ ")"
-| e@(holterm.pi n ty t) := "(holterm.pi " ++ repr n ++ " " ++ holtype.repr ty ++ " " ++ holterm.repr t ++ ")"
+-- | e@(holterm.pi n ty t) := "(holterm.pi " ++ repr n ++ " " ++ holtype.repr ty ++ " " ++ holterm.repr t ++ ")"
 -- Boolean constant
 | e@(holterm.top) := "(holterm.top)"
 | e@(holterm.bottom) := "(holterm.bottom)"
+
+meta def holform.repr : holform → string
+| e@(holform.P t) := "(holform.P " ++ t.repr ++ ")"
+| e@(holform.T n t) := "(holform.T " ++ name.to_string n ++ holtype.repr t ++ ")"
+| e@(holform.eq t1 t2) := "(holform.eq " ++ t1.repr ++ t2.repr ++ ")"
+-- Boolean constant
+| e@(holform.bottom) := "(holform.bottom)"
+| e@(holform.top) := "(holform.top)"
+| e@(holform.neg f) := "(holform.neg " ++ f.repr ++ ")"
+| e@(holform.imp f1 f2) := "(holform.imp " ++ f1.repr ++ " " ++ f2.repr ++ ")"
+| e@(holform.iff f1 f2) := "(holform.iff " ++ f1.repr ++ " " ++ f2.repr ++ ")"
+| e@(holform.conj f1 f2) := "(holform.conj " ++ f1.repr ++ " " ++ f2.repr ++ ")"
+| e@(holform.disj f1 f2) := "(holform.disj " ++ f1.repr ++ " " ++ f2.repr ++ ")"
+| e@(holform.all n t f) := "(holform.all " ++ name.to_string n ++ " " ++ t.repr  ++ " " ++ f.repr ++ ")"
+| e@(holform.exist n t f) := "(holform.exist " ++ name.to_string n ++ " " ++ t.repr ++ " " ++ f.repr ++ ")"
+
+
+meta mutual def holtype_list_to_format, holtype_cross_list_to_format, holtype.to_format_aux, holterm.to_format_aux
+with  holtype_list_to_format : list holtype → ℕ → ℕ → string → format 
+| (x :: xs) depth n c := if n > 0
+                   then " " ++ c ++ " " ++ x.to_format_aux depth ++ (holtype_list_to_format xs depth (n+1) c)
+                   else x.to_format_aux depth ++ (holtype_list_to_format xs depth (n+1) c)
+| [] depth n c := ""
+
+with  holtype_cross_list_to_format : list (name × holtype) → ℕ → ℕ → string → format 
+| ((na,x) :: xs) depth n c := if n > 0
+                   then " " ++ c ++ " " ++ to_fmt na ++ ": " ++ x.to_format_aux depth ++ (holtype_cross_list_to_format xs depth (n+1) c)
+                   else to_fmt na ++ ": " ++ x.to_format_aux depth ++ (holtype_cross_list_to_format xs depth (n+1) c)
+| [] depth n c := ""
+
+with holtype.to_format_aux : holtype → ℕ → format 
+| e@(holtype.o) _ := "$o"
+| e@(holtype.i) _ := "$i"
+| e@(holtype.type) _ := "$tType"
+| e@(holtype.ltype n) _ := to_fmt n
+| e@(holtype.functor ts t) depth :=  (holtype_list_to_format ts depth 0 ">") ++ " > " ++ t.repr
+| e@(holtype.dep_binder ts t) depth := "!>[" ++ holtype_cross_list_to_format ts depth 0 "," ++ "] : (" ++ t.repr ++ ")"
+| e@(holtype.partial_app t) depth := "(" ++ t.to_format_aux depth ++ ")"
+
+with holterm.to_format_aux : holterm → ℕ → format 
+| e@(holterm.const n) _ := to_fmt n
+| e@(holterm.lconst n _) _ := to_fmt n
+| e@(holterm.prf) _ := "prf"
+| e@(holterm.var n) depth := "V" ++ to_fmt (depth - n)
+| e@(holterm.app t1 t2) depth := "(" ++ t1.to_format_aux depth ++ "@" ++ t2.to_format_aux depth ++ ")"
+| e@(holterm.lambda n ty t) depth := "( ^[" ++ to_fmt n ++ ":" ++ ty.to_format_aux depth ++ "] : " ++ t.to_format_aux depth ++ " )"
+-- Boolean constant
+| e@(holterm.top) _ := "$true"
+| e@(holterm.bottom) _ := "$false"
+
+meta def holform.to_format_aux : holform → ℕ → format
+| e@(holform.P t) depth := "p(" ++ t.to_format_aux depth ++ ")"
+| e@(holform.T n t) depth := "t(" ++ to_fmt n ++ t.to_format_aux depth ++ ")"
+| e@(holform.eq t1 t2) depth := "(" ++ t1.to_format_aux depth ++ "=" ++ t2.to_format_aux depth ++ ")"
+-- Boolean constant
+| e@(holform.bottom) _ := to_fmt "$false"
+| e@(holform.top) _ := to_fmt "$true"
+| e@(holform.neg f) depth := "~(" ++ f.to_format_aux depth ++ ")"
+| e@(holform.imp f1 f2) depth := "(" ++ f1.to_format_aux depth ++ " => " ++ f2.to_format_aux depth ++ ")"
+| e@(holform.iff f1 f2) depth := "(" ++ f1.to_format_aux depth ++ " <=> " ++ f2.to_format_aux depth ++ ")"
+| e@(holform.conj f1 f2) depth := "(" ++ f1.to_format_aux depth ++ " & " ++ f2.to_format_aux depth ++ ")"
+| e@(holform.disj f1 f2) depth := "(" ++ f1.to_format_aux depth ++ " | " ++ f2.to_format_aux depth ++ ")"
+| e@(holform.all n t f) depth := "! [" ++ to_fmt n ++ ":" ++ t.to_format_aux depth ++ "] : " ++ f.to_format_aux (depth + 1)
+| e@(holform.exist n t f) depth := "? [" ++ to_fmt n ++ ":" ++ t.to_format_aux depth ++ "] : " ++ f.to_format_aux (depth + 1)
+
+
+meta def holtype.to_format (t : holtype) : format := t.to_format_aux 0 
+meta def holterm.to_format (t : holterm) : format := t.to_format_aux 0 
+meta def holform.to_format (f : holform) : format := f.to_format_aux 0 
+
+
+---------------------
+-- DEBUG FUNCTIONS --
+---------------------
+meta def example_formula : holform :=
+holform.all `test holtype.o $ 
+    holform.eq
+        (holterm.app (holterm.app (holterm.const `h1) (holterm.const `h2)) (holterm.const `test))
+        (holterm.var 1)
+
+run_cmd do tactic.trace example_formula.to_format
