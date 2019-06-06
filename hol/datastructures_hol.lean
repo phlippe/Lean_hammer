@@ -18,17 +18,16 @@ with holterm : Type
 | var : nat → holterm -- Variables just specified by counter: X1,X2,X3,...
 | app : holterm → holterm → holterm -- @(t,s) is the same as t s => apply t on input s
 -- Encode λ-expressions explicitly
-| lambda : nat → holtype → holterm → holterm
+| lambda : name → holtype → holterm → holterm
 -- Pi expression should not be necessary/implemented in TH1?
 -- | pi : nat → holtype → holterm → holterm
 -- Boolean constant
--- TODO: Do we need them here for the predefined TFF $0 ?
 | top : holterm
 | bottom : holterm
 
 meta inductive holform
-| P : holterm → holform
-| T : name → holtype → holform
+| P : holterm → holform -- Provability of a term (used in e.g. hammer_f if expression does not fit to any other option)
+| T : holterm → holtype → holform -- Encoding of term constraints
 | eq : holterm → holterm → holform -- Equality. t == s
 | bottom : holform -- Constant False
 | top : holform -- Constant True
@@ -37,7 +36,7 @@ meta inductive holform
 | iff : holform → holform → holform -- Two-sided imply/iff: A ↔ B
 | conj : holform → holform → holform -- Conjunction: A ∧ B
 | disj : holform → holform → holform -- Disjunction: A ∨ B
-| all : name → holtype → holform → holform -- For all: ∀ (a : α) t -- a and α are the names, t the formula 
+| all : name → holtype → holform → holform -- For all: ∀ (a : α) t -- a is the name of the parameter/variable, α the type, t the formula 
 | exist : name → holtype → holform → holform -- Exists: ∃ (a : α) t -- Similar as above
 
 
@@ -120,7 +119,7 @@ with holterm.repr : holterm → string
 | e@(holterm.var n) := "(holterm.var " ++ repr n ++ ")"
 | e@(holterm.app t1 t2) := "(holterm.app " ++ holterm.repr t1 ++ " " ++ holterm.repr t2 ++ ")"
 -- Encode λ-expressions explicitly
-| e@(holterm.lambda n ty t) := "(holterm.lambda " ++ repr n ++ " " ++ holtype.repr ty ++ " " ++ holterm.repr t ++ ")"
+| e@(holterm.lambda n ty t) := "(holterm.lambda " ++ name.to_string n ++ " " ++ holtype.repr ty ++ " " ++ holterm.repr t ++ ")"
 -- | e@(holterm.pi n ty t) := "(holterm.pi " ++ repr n ++ " " ++ holtype.repr ty ++ " " ++ holterm.repr t ++ ")"
 -- Boolean constant
 | e@(holterm.top) := "(holterm.top)"
@@ -128,7 +127,7 @@ with holterm.repr : holterm → string
 
 meta def holform.repr : holform → string
 | e@(holform.P t) := "(holform.P " ++ t.repr ++ ")"
-| e@(holform.T n t) := "(holform.T " ++ name.to_string n ++ holtype.repr t ++ ")"
+| e@(holform.T n t) := "(holform.T " ++ holterm.repr n ++ holtype.repr t ++ ")"
 | e@(holform.eq t1 t2) := "(holform.eq " ++ t1.repr ++ t2.repr ++ ")"
 -- Boolean constant
 | e@(holform.bottom) := "(holform.bottom)"
@@ -140,7 +139,6 @@ meta def holform.repr : holform → string
 | e@(holform.disj f1 f2) := "(holform.disj " ++ f1.repr ++ " " ++ f2.repr ++ ")"
 | e@(holform.all n t f) := "(holform.all " ++ name.to_string n ++ " " ++ t.repr  ++ " " ++ f.repr ++ ")"
 | e@(holform.exist n t f) := "(holform.exist " ++ name.to_string n ++ " " ++ t.repr ++ " " ++ f.repr ++ ")"
-
 
 meta mutual def holtype_list_to_format, holtype_cross_list_to_format, holtype.to_format_aux, holterm.to_format_aux
 with  holtype_list_to_format : list holtype → ℕ → ℕ → string → format 
@@ -170,14 +168,14 @@ with holterm.to_format_aux : holterm → ℕ → format
 | e@(holterm.prf) _ := "prf"
 | e@(holterm.var n) depth := "V" ++ to_fmt (depth - n)
 | e@(holterm.app t1 t2) depth := "(" ++ t1.to_format_aux depth ++ "@" ++ t2.to_format_aux depth ++ ")"
-| e@(holterm.lambda n ty t) depth := "( ^[" ++ to_fmt n ++ ":" ++ ty.to_format_aux depth ++ "] : " ++ t.to_format_aux depth ++ " )"
+| e@(holterm.lambda n ty t) depth := "( ^[" ++ to_fmt n ++ ":" ++ ty.to_format_aux depth ++ "] : " ++ t.to_format_aux (depth + 1) ++ " )"
 -- Boolean constant
 | e@(holterm.top) _ := "$true"
 | e@(holterm.bottom) _ := "$false"
 
 meta def holform.to_format_aux : holform → ℕ → format
 | e@(holform.P t) depth := "p(" ++ t.to_format_aux depth ++ ")"
-| e@(holform.T n t) depth := "t(" ++ to_fmt n ++ t.to_format_aux depth ++ ")"
+| e@(holform.T n t) depth := "t(" ++ n.to_format_aux depth ++ t.to_format_aux depth ++ ")"
 | e@(holform.eq t1 t2) depth := "(" ++ t1.to_format_aux depth ++ "=" ++ t2.to_format_aux depth ++ ")"
 -- Boolean constant
 | e@(holform.bottom) _ := to_fmt "$false"
@@ -195,6 +193,11 @@ meta def holtype.to_format (t : holtype) : format := t.to_format_aux 0
 meta def holterm.to_format (t : holterm) : format := t.to_format_aux 0 
 meta def holform.to_format (f : holform) : format := f.to_format_aux 0 
 
+meta def holterm.to_name : holterm → name 
+| e := e.to_format.to_string
+
+meta def holtype.to_name : holtype → name 
+| e := e.repr
 -- Convert formula with name and role to output string
 meta def axiom_to_thf (id : string) (r : role) (f : holform) : format :=
     to_fmt "thf(" ++ to_fmt id ++ "," ++ r.to_format ++ ",(" ++ f.to_format ++ "))."

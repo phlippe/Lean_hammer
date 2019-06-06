@@ -22,6 +22,11 @@ citecolor = black]{hyperref} % For hyperlinks in the PDF
 \usepackage{marvosym, wasysym} % More symbols
 \usepackage{rotating} % Rotation tools
 \usepackage{censor} % Facilities for controlling restricted text
+\usepackage{listings}
+\lstset{
+	basicstyle=\ttfamily,
+	mathescape
+}
 \newcommand{\note}[1]{\marginpar{\scriptsize \textcolor{red}{#1}}} % Enables comments in red on margin
 \newcommand{\F}[0]{$\mathcal{F}$ }
 \newcommand{\G}[0]{$\mathcal{G}$ }
@@ -214,9 +219,47 @@ The first step of our pipeline is parsing the Dependent Type Theory of Lean to T
 		\end{verbatim}
 		\item At last, we also need to support partial applications as term arguments. Thus, in the previous example, \texttt{map@A@B} should be encoded by \texttt{holtype.partial\_app}.
 	\end{itemize}
-	\item[holterm] Type
-	\item[holform] Type
+	\item[holterm] This datastructure represents term expressions in TH1. Supported expressions are:
+	\begin{itemize}
+		\item Constants can be encoded by \texttt{const}. This also includes function names like \texttt{map}. Alternatively, a local constant can be defined where the second argument specifies the type of the constant.
+		\item Proofs (aka constants of a type whose type is \texttt{Prop}) are explicitly handled by the term option \texttt{prf}.
+		\item Variables in a formula are specified by a natural number instead of a name. We use this as counter throughout the formula to create variable names (i.e. \texttt{X1}, \texttt{X2}, etc.).
+		\item Applications of a function on parameters is encoded by \texttt{app}. We use a recursive pattern to support function with more than one input parameters. Hence, the term \texttt{map@A@B} (or \texttt{map(A,B)})) is translated to:
+		\begin{verbatim}
+		map@A@B   =>   app(app(map, A), B)
+		\end{verbatim}
+		\item Lambda expressions are specified by the name and type of the input parameter, and the return expressions. An example translation from TH1 is as follows:
+		\begin{verbatim}
+		^ [Q : $o] : $false   =>   holterm.lambda (`Q`, holtype.o, holterm.bottom)
+		\end{verbatim}
+		\item As languages like TH1 define separate keywords for \texttt{\$true} and \texttt{\$false}, they are also included here as options (called \texttt{top} and \texttt{bottom} respectively). Note that these terms are not valid for Boolean-free HOL. 
+	\end{itemize}
+	\item[holform] The data structure \texttt{holform} combines the previous two data structures to formula. 
+	\begin{itemize}
+		\item Type constraints are encoded by \texttt{holform.T}. This can be used if a type check is used within another formula. However, type definitions should not be defined here, but rather by the explicit data structure \texttt{type\_def}.
+		\item Equality is encoded by \texttt{holform.eq}.
+		\begin{verbatim}
+		A = B   =>   holform.eq (A, B)
+		\end{verbatim}
+		\item Standard logical operators such as negation, implication, disjunction and conjunction are provided as well.
+		\item The quantifiers $\forall$ and $\exists$ take a name and type as input to specify the parameter/variable of the quantifier. The last input is the term over which the quantifier should hold. Example:
+		\begin{verbatim}
+		forall x : nat, 2*x=x+x   =>   holform.all (`x`, holtype.i, holform.eq (...))
+		\end{verbatim}
+		\item For terms that cannot be converted to any of these formula options, we  use \texttt{holform.P} which represents the provability of a term.
+	\end{itemize}
 \end{description}
+
+We collect all formula in a data structure called \texttt{hammer\_state}. We thereby distinguish between axioms and type definitions. An axiom is specified by a name (note that this name can be arbitrary and does not influence the proof process), and its formula itself which is assumed to be true. It encodes examples like:
+\begin{verbatim}
+thf('test_axiom',axiom, 1+1=2).
+\end{verbatim}
+A type definition in contrast only specifies the type of a constant throughout the proof. The first name (\texttt{def\_name}) is an arbitrary name for debugging as for axiom. The second specifies the type name that is defined here. The last argument is a \texttt{holtype} argument that encodes the explicit type. Example:
+
+\begin{verbatim}
+thf('test_type_def',type,(myType : $o > $tType > $i))).
+\end{verbatim}
+
 \subsubsection{Translation}
 \textcolor{red}{In progress} (see this \href{https://link.springer.com/chapter/10.1007/BFb0037108}{paper} for translation of DTT to HOL \cite{DTT2HOL}). 
 \subsection{High Order Logic to Boolean-free HOL}

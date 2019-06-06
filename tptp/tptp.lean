@@ -261,7 +261,6 @@ meta def folform.to_format_aux : folform → nat → format
 -- For outer formulas, start with depth 0 (all others use recursive function above)
 meta def folform.to_format (f : folform) : format := folform.to_format_aux f 0
 
--- What for is this instance?
 meta instance : has_to_format folform :=
 ⟨folform.to_format⟩
 

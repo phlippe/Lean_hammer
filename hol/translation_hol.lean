@@ -8,8 +8,8 @@ meta instance (α : Type) : has_coe (tactic α) (hammer_tactic α) :=
 
 
 meta def using_hammer {α} (t : hammer_tactic α) : tactic (α × hammer_state) :=
-do let ss := hammer_state.mk [] [],
-   state_t.run t ss -- (do a ← t, return a) 
+do let ss := hammer_state.mk [] [] [],
+   state_t.run t ss 
 
 meta def when' (c : Prop) [decidable c] (tac : hammer_tactic unit) : hammer_tactic unit :=
 if c then tac else tactic.skip
@@ -24,6 +24,9 @@ do tp ← tactic.infer_type e,
 
 meta def add_axiom (n : name) (axioma : holform) : hammer_tactic unit :=
 do state_t.modify (fun state, {state with axiomas := ⟨n, axioma⟩ :: state.axiomas})
+
+meta def add_type_def (def_name : name) (type_name : name) (t : holtype) : hammer_tactic unit :=
+do state_t.modify (fun state, {state with type_definitions := ⟨def_name, type_name, t⟩ :: state.type_definitions})
 
 meta def add_constant (n : name) (e : expr) : hammer_tactic unit :=
 do state_t.modify (fun state, {state with introduced_constants := ⟨n, e⟩ :: state.introduced_constants })
@@ -115,14 +118,15 @@ meta def remove_suffix_of_string : list char → list char
 
 meta def collect_lambdas (e : expr) := collect_lambdas_aux (e, [])
 
+meta def trace_list : list (name × holtype) → hammer_tactic unit
+| (x :: xs) := do tactic.trace (x.1), trace_list xs
+| _ := tactic.trace "End"
 
-meta mutual def hammer_c, hammer_g, hammer_f
-with hammer_c : expr → hammer_tactic holterm
-| e@(expr.const n _) := 
+
+meta mutual def hammer_c_aux, hammer_g_aux, hammer_f_aux
+with hammer_c_aux : expr → ℕ → hammer_tactic holterm
+| e@(expr.const n _) _ := 
   do 
-    -- TODO deviation from specification, map constants : sth : Prop to prf
-    -- is this necessary?
-    -- tactic.trace e,
     t ← tactic.infer_type e, -- consult the environment (get type of expression)
     lip ← lives_in_prop_p t, -- check whether t is prop or not
     if lip
@@ -130,18 +134,17 @@ with hammer_c : expr → hammer_tactic holterm
       return $ holterm.prf -- What about the type/formula it actually proofs?
     else
       return $ holterm.const $ (remove_suffix_of_string n.to_string.to_list).as_string 
-| (expr.local_const n pp _ t) := -- Same for local constants
-  do  tactic.trace ("Found local constant"),
-      lip ← lives_in_prop_p t,
+| (expr.local_const n pp _ t) depth := -- Same for local constants
+  do  lip ← lives_in_prop_p t,
       if lip
       then
         return $ holterm.prf
       else
-        do  ttype ← (hammer_g t),
+        do  ttype ← (hammer_g_aux t depth),
             return $ holterm.lconst n ttype
-| (expr.app t s) := -- Application (in paper C_Γ(ts)=...)
-  do  tp ← hammer_c t, -- Get C_Γ(t)
-      sp ← hammer_c s, -- Get C_Γ(s)
+| (expr.app t s) depth := -- Application (in paper C_Γ(ts)=...)
+  do  tp ← hammer_c_aux t depth, -- Get C_Γ(t)
+      sp ← hammer_c_aux s depth, -- Get C_Γ(s)
       match tp with
       | holterm.prf := return holterm.prf -- If C_Γ(t) is type proof, then just return type proof
       | _ := -- Anything else: check what type C_Γ(s) has
@@ -151,89 +154,128 @@ with hammer_c : expr → hammer_tactic holterm
         end
       end
 
-| e@(expr.pi n n1 t _) := -- Dependent types (in paper C_Γ(Πx:t.s) )
-  do  lip ← lives_in_prop_p e,
-      Fn ← mk_fresh_name,
-      let F := holterm.const Fn, -- Fresh constant F
-      let An := n ++ Fn, -- Axiom name
-      ys ← hammer_ff $ hammer_fc e, -- y = FF_Γ(FC(Γ;Πx:t.s))
-      let ce0 := list.foldl (λ t (np : name × holtype), holterm.app t (holterm.lconst np.1 np.2)) F ys, -- Fy (for all elements in ys, apply F on them by creating local constant of the name)
-      if lip 
-      then -- If s is of type Prop: new axiom ∀y.P(Fy) ↔ F_Γ(Πx:t.s)  
-        (do let ce1 := holform.P ce0, 
-            ce2 ← hammer_f e, -- F_Γ(Πx:t.s)   
-            add_axiom An $ wrap_quantifier holform.all ys (holform.iff ce1 ce2)) -- Add new axiom to tactic
-      else 
-        (do add_axiom An $ holform.top),
-    -- TODO: Is this type checking necessary for HOL? We have probably encoded it in the type axioms before
-    --   else -- Otherwise: new axiom ∀yz.T(z,Fy) ↔ G_Γ(z,Πx:t.s)  
-    --     (do zn ← mk_fresh_name, -- Get new, fresh constant name
-    --         tce0 <- holtype.infer_type ce0,
-    --         let zlc := holterm.lconst zn tce0, -- Create local constant from this name
-    --         let ys := (⟨zn, tce0⟩ :: ys : list $ name × holtype), -- Add this constant to the already existing set of free variables of our formula
-    --         -- TODO: Understand this axiom and try to find the best translation to TF0
-    --         let ce1 := holform.T zlc ce0, -- type checker T(z,Fy)
-    --         ce2 ← hammer_g zlc e, -- type guard G_Γ(z,Πx:t.s) 
-    --         add_axiom An $ wrap_quantifier holform.all ys (holform.iff ce1 ce2)), -- Add new axiom to tactic
-      return ce0 -- Return Fy (what for is this necessary?)
-| e@(expr.lam n _ _ _) := -- Lambda expression C_Γ(λx:τ.t)=Fy_0
-  do  tactic.trace "Lambda",
-      (t, xτs) ← collect_lambdas e, -- Get all lambda expressions in e
-      α ← tactic.infer_type t, -- Infer the type of t given all lambda expression (Γ,x:τ|-t:α)
-      tactic.trace α,
-      tactic.trace t,
-      tactic.trace e,
-      let yρs := hammer_fc e, -- y: ρ = FC(Γ;λx:τ.t) - Get list of free constants in e
-      Fn ← mk_fresh_name, -- Fresh constant name
-      let An := n ++ Fn, -- ??? Add new constant name to list of current constants(?)
-      y₀s ← hammer_ff yρs, -- 
-      x₀s ← hammer_ff xτs, -- 
-      let Ft :=
-        list.foldr
-          (λ (nt : name × holtype × expr) a,
-            expr.pi nt.2.1.to_name binder_info.default nt.2.2 $ expr.abstract_local a nt.1)
-          α
-          $ yρs ++ xτs,
-      -- instead of extending the environment, we use a local constant and keep track of its name
-      add_constant Fn Ft,
-      let F := @expr.local_const tt Fn Fn binder_info.default Ft,
-      let (ce1a : expr) :=
-        list.foldl 
-          (λ (a : expr) (nt : name × holtype × expr), (a (expr.local_const nt.1 nt.2.1.to_name binder_info.default nt.2.2)))
-          F
-          $ yρs ++ xτs,  
-      -- TODO two approaches:
-      my_eq ← tactic.mk_const `eq,
-      my_iff ← tactic.mk_const `iff,
-      lip ← lives_in_prop_p ce1a,
-      let ce1b' := if lip then (my_iff ce1a t) else (my_eq α ce1a t),
-      -- ce1b ← tactic.to_expr ``(eq %%ce1a %%t), 
-      -- tactic.to_expr is going to blow up if operands are not of the same type. Exciting.
-      ce1 ← hammer_f ce1b',
-      add_axiom An $ wrap_quantifier holform.all (y₀s ++ x₀s) ce1,
-      return $
-        list.foldl
-          (λ a (nt : name × holtype), holterm.app a $ holterm.lconst nt.1 nt.2)
-          (holterm.const Fn)
-          y₀s
-| e@(expr.elet x τ t s) := do tactic.trace "Found elet during translation",
+| e@(expr.pi n n1 t _) depth := -- Dependent types
+  do sorry -- TODO: How to deal with pi expressions the best?
+
+| e@(expr.lam n b a c) depth := -- Lambda expression C_Γ(λx:τ.t)=Fy_0
+  do  -- tactic.trace "Lambda at depth ",
+      let vname := "V" ++ to_string depth,
+      -- tactic.trace vname,
+      vtype <- hammer_g_aux a depth, -- Type of variable
+      inner_expr <- hammer_c_aux c (depth+1), -- Expression within the lambda expression
+      return $ holterm.lambda vname vtype inner_expr
+
+| e@(expr.elet x τ t s) depth := do tactic.trace "Found elet during translation",
                            undefined
 -- TODO: Check if those need to be implemented as well
-| e@(expr.var n) := do tactic.trace "Found variable during translation", 
+| e@(expr.var n) depth := -- do tactic.trace "Found variable during translation",
+                    -- tactic.trace e,
                     return $ holterm.var n 
 -- NEED TO BE IMPLEMENTED
-| e@(expr.sort _) := do tactic.trace "Found sort during translation", 
+| e@(expr.sort _) depth := do tactic.trace "Found sort during translation", 
                      undefined
-                     -- hammer_c `(5)
-| e@(expr.mvar _ _ _) := do tactic.trace "Found mvar during translation",  
+                     -- hammer_c_aux `(5)
+| e@(expr.mvar _ _ _) depth := do tactic.trace "Found mvar during translation",  
                          undefined
-| e@(expr.macro _ _) := do tactic.trace "Found macro during translation", 
+| e@(expr.macro _ _) depth := do tactic.trace "Found macro during translation", 
                         undefined
 
-with hammer_g : expr → hammer_tactic holtype
-| e := return holtype.o
-with hammer_f : expr → hammer_tactic holform
-| e := return holform.bottom
+with hammer_g_aux : expr → ℕ → hammer_tactic holtype
+| `(ℕ) _ := return holtype.i
+| `(expr.sort level.zero) _ := return holtype.o
+| `(Sort _) _ := return holtype.type
+| e@(expr.app a b) depth := do 
+                    transl_a <- hammer_c_aux a depth,
+                    transl_b <- hammer_c_aux b depth,
+                    return $ holtype.partial_app $ holterm.app transl_a transl_b
+| e@(expr.lam n b a c) depth := do 
+                    let vname := "V" ++ to_string depth,
+                    vtype <- hammer_g_aux a depth, -- Type of variable
+                    inner_expr <- hammer_g_aux c (depth+1), -- Expression within the lambda expression
+                    match inner_expr with 
+                    | holtype.dep_binder l t := return $ holtype.dep_binder ([(vname, vtype)]++l) t
+                    | _ := return $ holtype.dep_binder [(vname, vtype)] inner_expr
+                    end
+-- Equal to Π equation
+| `(%%l → %%r) depth := do 
+                    right_type <- hammer_g_aux r depth,
+                    left_type <- hammer_g_aux l depth,
+                    match right_type with 
+                    | holtype.functor list_params return_type := return $ holtype.functor ([left_type] ++ list_params) return_type
+                    | _ := return $ holtype.functor [left_type] right_type
+                    end
+| e depth := do tactic.trace "hammer_g_aux expression Type", tactic.trace e, return $ holtype.ltype e.to_string
+
+with hammer_f_aux : expr → ℕ → hammer_tactic holform
+-- Pi notations are translated as ∀x
+| e@(expr.pi n _ t s) depth :=
+  do  lip ← lives_in_prop_p t,
+      if lip -- If t is prop, we can translate it more efficiently (t → s)
+      then
+        do  fe1 ← hammer_f_aux t depth,
+            (s, _) ← body_of e,
+            fe2 ← hammer_f_aux s depth,
+            return $ holform.imp fe1 fe2
+      else
+        do  let vname := "V" ++ to_string depth,
+            vtype <- hammer_g_aux t depth, -- Type of variable
+            fe2 ← hammer_f_aux s (depth+1),
+            return $ holform.all vname vtype fe2
+-- Translating conjunction
+| e@`(and %%t %%s) depth :=
+  do  fe1 ← hammer_f_aux t depth,
+      fe2 ← hammer_f_aux s depth,
+      return $ holform.conj fe1 fe2
+-- Translating disjunction
+| `(or %%t %%s) depth :=
+  do  fe1 ← hammer_f_aux t depth,
+      fe2 ← hammer_f_aux s depth,
+      return $ holform.disj fe1 fe2
+-- Translating two-sided implication A⇄B
+| `(iff %%t %%s) depth :=
+  do  fe1 ← hammer_f_aux t depth,
+      fe2 ← hammer_f_aux s depth,
+      return $ holform.iff fe1 fe2   
+-- Translating negation                    
+| `(not %%t) depth :=
+  do  fe1 ← hammer_f_aux t depth,
+      return $ holform.neg $ fe1  
+-- Translating equality
+| `(%%t = %%s) depth :=
+  do  fe1 ← hammer_c_aux t depth,
+      fe2 ← hammer_c_aux s depth,
+      return $ holform.eq fe1 fe2                                                    
+| t  depth :=
+  do  ge1 ← hammer_c_aux t depth,
+      return $ holform.P ge1
+
+meta def hammer_f (e : expr) : hammer_tactic holform := hammer_f_aux e 1
+meta def hammer_c (e : expr) : hammer_tactic holterm := hammer_c_aux e 1
+meta def hammer_g (e : expr) : hammer_tactic holtype := hammer_g_aux e 1
+-- def add_type_constraint (n : name) (e : expr) : hammer_tactic unit :=
+-- do
+--   tp ← tactic.infer_type e,
+--   type_expr ← hammer_g_aux tp 1,
+--   add_axiom
 
 
-run_cmd do (c, _) <- using_hammer $ hammer_c `(λ (x:ℕ), x + 1=5), tactic.trace $ holterm.repr c
+
+---------------------
+-- DEBUG FUNCTIONS --
+---------------------
+
+run_cmd do (c, _) <- using_hammer $ hammer_c_aux `(1+1=2) 1, tactic.trace $ holterm.to_format c
+run_cmd do (c, _) <- using_hammer $ hammer_c_aux `(λ (x:ℕ→ℕ), x 1 + 1 = (λ(y:ℕ), (x 1)-y*1) 1 ) 1, tactic.trace $ holterm.to_format c
+run_cmd do (c, _) <- using_hammer $ hammer_c_aux `(λ (x:(list ℕ)→ℕ), 1) 1, tactic.trace $ holterm.to_format c
+run_cmd do (c, _) <- using_hammer $ hammer_c_aux `(λ {α : Type} (x:(list α)→ℕ), 1) 1, tactic.trace $ holterm.to_format c
+
+
+def fib : nat -> nat
+| 0 := 1
+| 1 := 1
+| (nat.succ (nat.succ n)) := fib n + fib (nat.succ n)
+
+
+run_cmd do (c, _) <- using_hammer $ hammer_f_aux `(1+1=2) 1, tactic.trace $ holform.to_format c
+run_cmd do (c, _) <- using_hammer $ hammer_g_aux `(fib) 1, tactic.trace $ holtype.to_format c
+run_cmd do tp ← tactic.infer_type `(fib), (c, _) <- using_hammer $ hammer_g_aux tp 1, tactic.trace $ holtype.to_format c
