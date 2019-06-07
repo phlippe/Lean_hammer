@@ -2,6 +2,9 @@ meta mutual inductive holtype, holterm
 with holtype : Type
 | o : holtype -- Boolean (predefined TFF $o) 
 | i : holtype -- Individual (predefined TFF $i, default type)
+| int : holtype -- Individual (predefined TFF $int, integer)
+| rat : holtype -- Individual (predefined TFF $rat, rational numbers)
+| real : holtype -- Individual (predefined TFF $real, real numbers)
 | type : holtype -- Type (predefined TFF $tType)
 | ltype : name → holtype -- Self-specified type
 | functor : list holtype → holtype → holtype 
@@ -106,6 +109,9 @@ with  holtype_cross_list_to_repr : list (name × holtype) → string
 with holtype.repr : holtype → string 
 | e@(holtype.o) := "(holtype.o)"
 | e@(holtype.i) := "(holtype.i)"
+| e@(holtype.int) := "(holtype.int)"
+| e@(holtype.rat) := "(holtype.rat)"
+| e@(holtype.real) := "(holtype.real)"
 | e@(holtype.type) := "(holtype.type)"
 | e@(holtype.ltype n) := "(holtype.ltype " ++ name.to_string n ++ ")"
 | e@(holtype.functor ts t) := "(holtype.functor [" ++  holtype_list_to_repr ts ++ "] " ++ t.repr ++ ")"
@@ -156,6 +162,9 @@ with  holtype_cross_list_to_format : list (name × holtype) → ℕ → ℕ → 
 with holtype.to_format_aux : holtype → ℕ → format 
 | e@(holtype.o) _ := "$o"
 | e@(holtype.i) _ := "$i"
+| e@(holtype.int) _ := "$int"
+| e@(holtype.rat) _ := "$rat"
+| e@(holtype.real) _ := "$real"
 | e@(holtype.type) _ := "$tType"
 | e@(holtype.ltype n) _ := to_fmt n
 | e@(holtype.functor ts t) depth :=  (holtype_list_to_format ts depth 0 ">") ++ " > " ++ t.to_format_aux depth

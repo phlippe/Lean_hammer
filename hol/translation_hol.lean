@@ -181,7 +181,7 @@ with hammer_c_aux : expr → ℕ → hammer_tactic holterm
                         undefined
 
 with hammer_g_aux : expr → ℕ → hammer_tactic holtype
-| `(ℕ) _ := return holtype.i
+| `(ℕ) _ := return holtype.int
 | `(expr.sort level.zero) _ := return holtype.o
 | `(Sort _) _ := return holtype.type
 | e@(expr.app a b) depth := do 
@@ -204,7 +204,8 @@ with hammer_g_aux : expr → ℕ → hammer_tactic holtype
                     | holtype.functor list_params return_type := return $ holtype.functor ([left_type] ++ list_params) return_type
                     | _ := return $ holtype.functor [left_type] right_type
                     end
-| e depth := do tactic.trace "hammer_g_aux expression Type", tactic.trace e, return $ holtype.ltype e.to_string
+| e@(expr.const n _) _ := return $ holtype.ltype e.to_string
+| e depth := do tactic.trace "hammer_g_aux expression Type", tactic.trace e, return $ holtype.i
 
 with hammer_f_aux : expr → ℕ → hammer_tactic holform
 -- Pi notations are translated as ∀x

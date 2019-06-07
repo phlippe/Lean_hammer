@@ -94,3 +94,5 @@ run_cmd do ⟨f,_⟩ <- using_hammer $ problem_to_hol_format [`fib]
                         [`(Π(x:ℕ), x + 1 = nat.succ x), `(nat.succ 0 = 1), `(nat.succ 1 = 2)]       -- , `(0:ℕ), `(1:ℕ), `(2:ℕ), `(3:ℕ), `(4:ℕ), `(5:ℕ), `(6:ℕ), `(7:ℕ), `(8:ℕ), `(Π x y : ℕ, sum_two x y =x+y)
                         `((fib 2 = 2)), 
            tactic.trace f 
+
+-- TODO: Change $i to NAT (is individual, not integer)           
