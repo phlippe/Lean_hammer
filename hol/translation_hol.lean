@@ -165,16 +165,12 @@ with hammer_c_aux : expr → ℕ → hammer_tactic holterm
       inner_expr <- hammer_c_aux c (depth+1), -- Expression within the lambda expression
       return $ holterm.lambda vname vtype inner_expr
 
+| e@(expr.var n) depth := return $ holterm.var n 
+-- TODO: Check if those need to be implemented as well
 | e@(expr.elet x τ t s) depth := do tactic.trace "Found elet during translation",
                            undefined
--- TODO: Check if those need to be implemented as well
-| e@(expr.var n) depth := -- do tactic.trace "Found variable during translation",
-                    -- tactic.trace e,
-                    return $ holterm.var n 
--- NEED TO BE IMPLEMENTED
 | e@(expr.sort _) depth := do tactic.trace "Found sort during translation", 
                      undefined
-                     -- hammer_c_aux `(5)
 | e@(expr.mvar _ _ _) depth := do tactic.trace "Found mvar during translation",  
                          undefined
 | e@(expr.macro _ _) depth := do tactic.trace "Found macro during translation", 

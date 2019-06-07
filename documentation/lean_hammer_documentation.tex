@@ -28,6 +28,7 @@ citecolor = black]{hyperref} % For hyperlinks in the PDF
 	mathescape
 }
 \newcommand{\note}[1]{\marginpar{\scriptsize \textcolor{red}{#1}}} % Enables comments in red on margin
+\newcommand{\TODO}[1]{\textbf{\textcolor{red}{#1}}}
 \newcommand{\F}[0]{$\mathcal{F}$ }
 \newcommand{\G}[0]{$\mathcal{G}$ }
 \newcommand{\C}[0]{$\mathcal{C}$ }
@@ -193,7 +194,7 @@ The first step of our pipeline is parsing the Dependent Type Theory of Lean to T
 \begin{description}
 	\item[holtype] The data structure \texttt{holtype} represents type expressions in TH1. The following types are distinguished:
 	\begin{itemize}
-		\item The standard types \texttt{\$o} (boolean), \texttt{\$i} (int) and \texttt{\$type} (type class) are implemented as constants
+		\item The standard types \texttt{\$o} (boolean), \texttt{\$i} (individual) and \texttt{\$type} (type class) as well as the numerical types \texttt{\$int}, \texttt{\$rat} and \texttt{\$real} are implemented as constants
 		\item Local types can be created by \texttt{ltype}. It is intended that these types are applied when using previously defined types in axioms. Example:
 		\begin{verbatim}
 			thf(bird_type, type, (bird : $tType)).
@@ -261,7 +262,55 @@ thf('test_type_def',type,(myType : $o > $tType > $i))).
 \end{verbatim}
 
 \subsubsection{Translation}
-\textcolor{red}{In progress} (see this \href{https://link.springer.com/chapter/10.1007/BFb0037108}{paper} for translation of DTT to HOL \cite{DTT2HOL}). 
+The translation of DTT to HOL was implemented with inspiration of the  translation of DTT to HOL \href{https://link.springer.com/chapter/10.1007/BFb0037108}{paper} \cite{DTT2HOL}, and the CoqHammer \href{https://link.springer.com/article/10.1007/s10817-018-9458-4}{paper} \cite{CoqHammer}. The translation process resembles the structure of the pipeline from DTT to FOL, but was extended and/or simplified at certain points. \\
+
+\textbf{Lean expressions to HOL}\\
+\textit{Implementation in }\texttt{translation\_hol.lean}\\
+Similar to the approach for the specific pipeline, we again implement the function \F, \C and \G but \G does this time not introduce a type constraint, but returns the \texttt{holtype} for a given expression. Therefore, each function converts a given expression to another data structure. We describe here the single steps of each of the three functions:
+\begin{description}
+	\item[\G: expr $\to$ holtype] \text{ }
+	\begin{itemize}
+		\item The type $\mathbb{N}$ is translated to \texttt{\$int}. Note that this assignment is currently a test idea and might not hold for all cases as \texttt{\$int} also includes negative numbers. Change this if needed.
+		\item The type \texttt{Prop} (or also referred to as \texttt{Sort 0}) is translated to \texttt{\$o}
+		\item Any type of form \texttt{Sort x} with \texttt{x} $=1,2,...$ is currently translated to \texttt{\$type}. For some cases, it might be necessary to translate types with \texttt{x} $>1$ to separate instances.
+		\item Partial applications like \texttt{A@B} are translated as such by using \texttt{holtype.partial\_app}. Note that we would translate \texttt{A} and \texttt{B} by \C first to get term expressions.
+		\item $\lambda$-expressions within types are translated by a deep binder as the result of it (which is assumed to be a type) depends on the input parameters. We therefore introduce a new variable and translate its type with \G. Next, we translate the inner expression of the lambda by \G, and finally combine everything into \texttt{holtype.dep\_binder}. Note that if the inner expression is a lambda expression as well, we combine both binders into one.
+		\item Standard function types such as $\mathbb{N}\to\mathbb{N}$ are handled by \texttt{holtype.functor}. To translate this kind of expression, we first translate both the left and right part by \G, and combine them into a functor structure. In cases where we have more than two arguments, e.g. $\mathbb{N}\to\mathbb{N}\to\mathbb{N}$, we translate it in the default order $\mathbb{N}\to\left(\mathbb{N}\to\mathbb{N}\right)$ but combine the parameter list afterwards. Note that pi-expressions are included in the expressions \texttt{`(\%\%l $\to$ \%\%r)}.
+		\item Besides the ones mentioned above, any constant expression is translated to a local type \texttt{holtype.ltype} with the expressions name itself. 
+		\item If we get an expression that does not fit to any of the mentioned cases, we simply use the type \texttt{\$i} (default type for any object/individual)
+	\end{itemize}
+	\item[\C: expr $\to$ holterm] \text{ }
+	\begin{itemize}
+		\item We translate constants simply into \texttt{holterm.const}, except they are a proof. In this case, we translate it into \texttt{holterm.prf}. Local constants are translated with the same principle, only that the type of the constant (determined by \G) is added for \texttt{holterm.local\_const}
+		\item Applications can also be translated to its corresponding data structures \texttt{holterm.app}, except if one of them is a proof which leads to either the proof itself or the function applied on it.
+		\item Pi expressions for \texttt{holterms} \TODO{are not implemented yet} as it is not clear yet how to deal with them the best way in TH1 (for pi expressions in formula, look at function \F). 
+		\item In contrast to FOL, lambda expressions can now simply be converted to \texttt{holterm.lambda}. For this, we create a new variable term, and determine its type by \G. The inner expression is again recursively translated by \C.
+	\end{itemize}
+	\item[\F: expr $\to$ holform] \text{ }
+	\begin{itemize}
+		\item Pi expressions are translated as $\forall$ formula as we assume the inner expressions to be from type \texttt{Prop} (or at least be translatable to \texttt{holform}). We therefore again introduce a new variable, and translate its type by \G.
+		\item Logical relations/operators such as \texttt{and}, \texttt{or}, \texttt{imp}, \texttt{iff} and \texttt{not} are explicitly integrated into the data structure \texttt{holform}
+		\item Equalities are simply translated into \texttt{holform.eq} with the left and right side being translated to \texttt{holterm} by \C.
+		\item In case that the expression does not fit to any of the cases mentioned above, we use \texttt{holform.P} representing the provability of a term. 
+	\end{itemize}
+\end{description}
+
+\textbf{Axiom expressions}\\
+\textit{Implementation in }\texttt{problem\_translation\_hol.lean}\\
+When translating axiom expressions, we distinguish between two cases on a high-level view: equality and type definitions. If the expression to translate is a equality \texttt{L=R} (e.g. \texttt{1+1=2}), we check whether the right-hand side expression is:
+\begin{itemize}
+	\item a proof. In this case, we can simply translate type (so the actual \texttt{Prop}-expression) by \F, and add it as axiom.
+	\item of type \texttt{Prop}: Then we replace the equality of the whole expression by a biconditional \texttt{L}$\Leftrightarrow$\texttt{R}, translate both \texttt{L} and \texttt{R} by \F, and finally add this statement as new axiom.
+	\item any other type: If none of the previous cases applies, we can simply apply \C on each \texttt{L} and \texttt{R}, and create the new axiom with the equality relation.
+\end{itemize}
+
+Equalities are a special cases where we can translate them directly into HOL. However, for expressions which do not have a equality on the highest level, we can do the same translation process we did for the right-hand side. Instead of the biconditional in case of \texttt{Prop}, we can simply add \F(\texttt{R}) to the clause/axiom database. However, if \texttt{R} is from any other type, we now add the axiom as type definition. As an example, consider the fibonacci function as shown in Figure~\ref{fig:fol_example}. If we now pass the expression \texttt{`fib} to the translation process, we would get the following type definition (with arbitrary name):
+\begin{verbatim}
+thf('_fresh.758.915',type,(fib : $int > $int)).
+\end{verbatim}
+This type definition expresses that \texttt{fib} takes as input parameter an integer (here we map $\mathbb{N}$ to \texttt{\$int}, might have to be changed) and return as well an integer. The recursive, inductive declarations of this functions need to be passed to the translation function as well as the expression \texttt{`fib}. Note that for inductive declarations, we use the same functions as for FOL. The full example with the same input as in Figure~\ref{fig:fol_example} is shown in Section~\ref{sec:hol_example}.
+
+\subsubsection{Open issues}
 \subsection{High Order Logic to Boolean-free HOL}
 \subsection{Boolean-free HOL to $\lambda$-free HOL}
 \subsection{$\lambda$-free HOL to FOL}
@@ -272,7 +321,8 @@ thf('test_type_def',type,(myType : $o > $tType > $i))).
 \bibliography{references.bib}
 
 \appendix
-\section{FOL examples}
+\section{Example translations}
+\subsection{FOL examples}
 \label{sec:fol_examples}
 The non-optimized output for the example of proving that \texttt{fib 2 = 2} is shown below:
 
@@ -396,7 +446,7 @@ a(a('has_one.one',
 \end{verbatim}
 
 \normalsize
-\subsection{Optimized FOL export}
+\subsubsection{Optimized FOL export}
 \label{sec:fol_examples_optimized}
 The optimized version get rids of some constant term applications, and replaces it with a new name. For debugging purpose, the names are right now the concatenation of the term names that were combined for the new constant:
 
@@ -490,4 +540,29 @@ conjecture,
 'const_.a_.a_.a_.c_.bit0.-.c_.nat.-.c_.nat.has_add.-.c_.const_.a_.a_.c_.has_one.one.-.c_.nat.-.c_.nat.has_one')
 = 'const_.a_.a_.a_.c_.bit0.-.c_.nat.-.c_.nat.has_add.-.c_.const_.a_.a_.c_.has_one.one.-.c_.nat.-.c_.nat.has_one'))).
 \end{verbatim}
+
+\subsection{HOL example}
+\label{sec:hol_example}
+\begin{verbatim}
+thf('_fresh.758.915',type,(fib : $int > $int)).
+
+thf('_fresh.758.919',axiom,(((((bit0@nat)@nat.has_add)@((has_one.one@nat)@nat.has_one))=
+(nat.succ@((has_one.one@nat)@nat.has_one))))).
+
+thf('_fresh.758.918',axiom,((((has_one.one@nat)@nat.has_one)=(nat.succ@((has_zero.zero@nat)@nat.has_zero))))).
+
+thf('_fresh.758.917',axiom,(! [V1:$int] : (((((has_add.add@nat)@nat.has_add)@V1)@((has_one.one@nat)@nat.has_one))=
+(nat.succ@V1)))).
+
+thf('_fresh.758.912',axiom,(((fib@((has_zero.zero@nat)@nat.has_zero))=((has_one.one@nat)@nat.has_one)))).
+
+thf('_fresh.758.909',axiom,(((fib@((has_one.one@nat)@nat.has_one))=((has_one.one@nat)@nat.has_one)))).
+
+thf('_fresh.758.903',axiom,(! [V1:$int] : ((fib@(nat.succ@(nat.succ@V1)))=
+((((has_add.add@nat)@nat.has_add)@(fib@V1))@(fib@(nat.succ@V1)))))).
+
+thf('problem_conjecture',conjecture,(((fib@(((bit0@nat)@nat.has_add)@((has_one.one@nat)@nat.has_one)))=
+(((bit0@nat)@nat.has_add)@((has_one.one@nat)@nat.has_one))))).
+\end{verbatim}
+
 \end{document}
