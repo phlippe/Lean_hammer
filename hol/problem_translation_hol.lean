@@ -1,5 +1,6 @@
 import .datastructures_hol
 import .translation_hol
+import .boolean_free_HOL
 
 --######################################
 --## Translating declarations for HOL ##
@@ -87,6 +88,11 @@ meta def problem_to_hol_format (declr: list name) (clauses: list expr) (conjectu
     ⟨conj,conj_state⟩ <- using_hammer (hammer_f conjecture),
     let cl_list := (hammer_state.axiomas cl_state), -- For debugging, if no simplification should be applied
     let td_list := (hammer_state.type_definitions cl_state), -- For debugging, if no simplification should be applied
+    
+    let conj := hol_formula_wo_bool conj,
+    let cl_list := axiom_list_wo_bool cl_list,
+    let td_list := typedef_list_wo_bool td_list,
+
     return $ export_formula td_list cl_list conj
 
 

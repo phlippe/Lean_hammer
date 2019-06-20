@@ -18,7 +18,7 @@ def fib : nat -> nat
 | 0 := 1
 | 1 := 1
 | (nat.succ (nat.succ n)) := fib n + fib (nat.succ n)
-
+ 
 def fib2 : nat -> nat
 | 0 := 1
 | 1 := 1
@@ -42,8 +42,8 @@ run_cmd do l ← tactic.get_decl `abc, tactic.trace l.type, tactic.trace l.is_de
 --             tactic.trace $ nearest_k_of_name `sum_two  contents features names 100
 
 -- == SMALL PROBLEM TRANSLATION ==
-run_cmd do ⟨f, _⟩ <- using_hammer $ problem_to_tptp_format [] [`(Π(x:ℕ), nat.succ x = x + 1), `(1 : nat), `(1+1 = 2)] `((1+1 = 2)),
-           tactic.trace f 
+run_cmd do ⟨f, _⟩ <- using_hammer $ problem_to_tptp_format [] [`(Π(x:ℕ), nat.succ x = x + 1), `(1 : nat), `(1+1 = 2)] `((1+1 = 2)), 
+           tactic.trace f  
            
 -- == EXAMPLE PROBLEM TRANSLATION == 
 run_cmd do ⟨f,_⟩ <- using_hammer $ problem_to_tptp_format [`fib2, `sum_two] 
@@ -54,7 +54,7 @@ run_cmd do ⟨f,_⟩ <- using_hammer $ problem_to_tptp_format [`fib2, `sum_two]
 run_cmd do ⟨f,_⟩ <- using_hammer $ problem_to_tptp_format [`fib] 
                         [`(Π(x:ℕ), x + 1 = nat.succ x), `(nat.succ 0 = 1), `(nat.succ 1 = 2), `(0:ℕ), `(1:ℕ)]       -- , `(0:ℕ), `(1:ℕ), `(2:ℕ), `(3:ℕ), `(4:ℕ), `(5:ℕ), `(6:ℕ), `(7:ℕ), `(8:ℕ), `(Π x y : ℕ, sum_two x y =x+y)
                         `((fib 2 = 2)), 
-           tactic.trace f 
+           tactic.trace f
 --   , `(Π(x y:ℕ),nat.succ x + y = nat.succ (x + y)), `(Π(x y:ℕ),x + y = y + x) 
 
 

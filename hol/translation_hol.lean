@@ -255,8 +255,6 @@ meta def hammer_g (e : expr) : hammer_tactic holtype := hammer_g_aux e 1
 --   type_expr ← hammer_g_aux tp 1,
 --   add_axiom
 
-
-
 ---------------------
 -- DEBUG FUNCTIONS --
 ---------------------
