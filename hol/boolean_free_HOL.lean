@@ -41,4 +41,6 @@ meta def typedef_list_wo_bool : list type_def → list type_def
 | (x :: xs) := [⟨x.1, x.2, hol_type_wo_bool x.3⟩] ++ xs
 | [] := []
 
+meta def boolean_type_replacements : list type_def :=
+ [⟨"boolean_definition", "boolean", holtype.type⟩, ⟨"boolean_true_definition", "bool_true", holtype.ltype "boolean"⟩, ⟨"boolean_false_definition", "bool_false", holtype.ltype "boolean"⟩]
 

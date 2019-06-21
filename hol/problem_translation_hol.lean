@@ -91,7 +91,7 @@ meta def problem_to_hol_format (declr: list name) (clauses: list expr) (conjectu
     
     let conj := hol_formula_wo_bool conj,
     let cl_list := axiom_list_wo_bool cl_list,
-    let td_list := typedef_list_wo_bool td_list,
+    let td_list := boolean_type_replacements ++ (typedef_list_wo_bool td_list),
 
     return $ export_formula td_list cl_list conj
 
