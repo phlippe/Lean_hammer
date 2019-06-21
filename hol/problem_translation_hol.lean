@@ -84,11 +84,13 @@ meta def translate_problem: list name → list expr → hammer_tactic unit
 
 meta def problem_to_hol_format (declr: list name) (clauses: list expr) (conjecture: expr) : hammer_tactic format := 
   do  
+    -- DTT to HOL
     ⟨cl,cl_state⟩ <- using_hammer (translate_problem declr clauses),
     ⟨conj,conj_state⟩ <- using_hammer (hammer_f conjecture),
     let cl_list := (hammer_state.axiomas cl_state), -- For debugging, if no simplification should be applied
     let td_list := (hammer_state.type_definitions cl_state), -- For debugging, if no simplification should be applied
     
+    -- HOL to Boolean-free HOL
     let conj := hol_formula_wo_bool conj,
     let cl_list := axiom_list_wo_bool cl_list,
     let td_list := boolean_type_replacements ++ (typedef_list_wo_bool td_list),
@@ -100,5 +102,4 @@ run_cmd do ⟨f,_⟩ <- using_hammer $ problem_to_hol_format [`fib]
                         [`(Π(x:ℕ), x + 1 = nat.succ x), `(nat.succ 0 = 1), `(nat.succ 1 = 2)]       -- , `(0:ℕ), `(1:ℕ), `(2:ℕ), `(3:ℕ), `(4:ℕ), `(5:ℕ), `(6:ℕ), `(7:ℕ), `(8:ℕ), `(Π x y : ℕ, sum_two x y =x+y)
                         `((fib 2 = 2)), 
            tactic.trace f 
-
--- TODO: Change $i to NAT (is individual, not integer)           
+         

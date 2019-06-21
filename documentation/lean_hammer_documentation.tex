@@ -162,6 +162,7 @@ The main function that is used is \texttt{problem\_to\_tptp\_format}. This funct
 To use this translation, copy output to the file \texttt{test\_problem.tptp} (note that the name of the file can be changed).
 Run a theorem prover like E \cite{EProver} on this file by executing the command \texttt{./eprover --auto --tptp3-in \textit{file/to/}test\_problem.tptp}. If everything worked out correctly, E finds a proof in a few milliseconds.
 \subsection{Open issues}
+\label{sec:fol_open_issues}
 \begin{itemize}
 	\item Up till now, the user has to specify by himself which declarations and expressions should be translated besides the conjecture. This process should be automated by a retrieving all possible clauses/declarations that are somehow connected with the conjecture, and then filtering/ranking these to only take the $N$ most relevant ones. Code based on an old version of Lean can be found \href{https://github.com/robertylewis/relevance_filter/tree/dev_lean_reparam}{here}, and the file \texttt{premise\_selection.lean} might be a good starting point.
 	\item The translation of inductive declarations works fine in the Lean hammer. However, plain declarations like:\\
@@ -311,10 +312,26 @@ thf('_fresh.758.915',type,(fib : $int > $int)).
 This type definition expresses that \texttt{fib} takes as input parameter an integer (here we map $\mathbb{N}$ to \texttt{\$int}, might have to be changed) and return as well an integer. The recursive, inductive declarations of this functions need to be passed to the translation function as well as the expression \texttt{`fib}. Note that for inductive declarations, we use the same functions as for FOL. The full example with the same input as in Figure~\ref{fig:fol_example} is shown in Section~\ref{sec:hol_example}.
 
 \subsubsection{Open issues}
+\begin{itemize}
+	\item 
+\end{itemize}
 \subsection{High Order Logic to Boolean-free HOL}
+\label{sec:hol_to_boolean_free}
+The general translation from DTT to HOL already follows a (mostly) boolean-free approach by translating logical operators like disjunctions or conjunction to term functions which define as return type \texttt{o\$}. The only part which is not boolean-free is that we allow \texttt{true} and \texttt{false} to be terms. Thus, to translate HOL to Boolean-free HOL, we simply introduce a new type, namely \texttt{boolean}, with its element \texttt{bool\_true} and \texttt{bool\_false}. We replace the appearance of \texttt{o\$} by \texttt{boolean}, \texttt{holterm.top} by \texttt{bool\_true}, and \texttt{holterm.bottom} by \texttt{bool\_false}. Furthermore, we add the type definitions according to the newly introduced statements:
+\begin{verbatim}
+thf('boolean_definition',type,(boolean : $tType)).
+thf('boolean_true_definition',type,(bool_true : boolean)).
+thf('boolean_false_definition',type,(bool_false : boolean)).
+\end{verbatim}
+This translation assumes that functions of the logical operators (i.e. disjunctions, etc.) are as well translated if needed. Hence, when designing the relevance filter, we need to take this into account.
 \subsection{Boolean-free HOL to $\lambda$-free HOL}
 \subsection{$\lambda$-free HOL to FOL}
 \subsection{FOL to monomorphic FOL}
+\subsection{Open issues}
+\begin{itemize}
+	\item Similar to FOL, this approach does not have a relevance filter yet (see first open issue Section~\ref{sec:fol_open_issues}). In future, this will hopefully be automated by a selection algorithm. Note the comment in Section~\ref{sec:hol_to_boolean_free} regarding relevance filter if you want to implement such on this code basis.
+	\item One big, challenging part left for finishing a generic Lean hammer is the proof reconstruction. Currently, we only get the feedback from the (external) theorem prover whether it found a proof or not. However, in future, the user should be presented with the actual steps of the proof, back in HOL or DTT.
+\end{itemize}
 
 \newpage
 \bibliographystyle{plain}
