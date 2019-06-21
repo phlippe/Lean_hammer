@@ -1,5 +1,5 @@
 # Lean hammer
-Development repository of a hammer for Lean.
+Development repository of a hammer for Lean. For details, please have a look at the [_documentation_](documentation/lean_hammer_documentation.pdf).
 
 ## File structure for FOL specific translation
 * [_leanhammer.lean_](leanhammer.lean): Main file combining all functions for testing
