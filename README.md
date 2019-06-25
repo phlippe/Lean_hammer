@@ -1,5 +1,7 @@
 # Lean hammer
-Development repository of a hammer for Lean. For details, please have a look at the [_documentation_](documentation/lean_hammer_documentation.pdf).
+Development repository of a Lean hammer. For details, please have a look at the [documentation](documentation/lean_hammer_documentation.pdf).
+
+This project has been developed at the Vrije Universiteit Amsterdam (2018-2019) in terms of the [Lean Forward project](https://lean-forward.github.io) (student research assistant position), under the supervision of [Jasmin Blanchette](https://cs.vu.nl/~jbe248/) and Robert Lewis.
 
 ## File structure for FOL specific translation
 * [_leanhammer.lean_](leanhammer.lean): Main file combining all functions for testing
@@ -18,6 +20,8 @@ Next to the general files, there are several functions that directly interact wi
 Typed first-order form. Coming soon...
 
 ## Generalized version
+Details are outlined in the [documentation](documentation/lean_hammer_documentation.pdf).
+
 <p align="center">
   <img src="documentation/figures/pipeline_DTT_HOL.png" width="500" title="Overview of the pipeline">
 </p>
