@@ -313,7 +313,7 @@ This type definition expresses that \texttt{fib} takes as input parameter an int
 
 \subsubsection{Open issues}
 \begin{itemize}
-	\item 
+	\item Pi expressions in \texttt{holterms} are not implemented yet. However, it is also not clear whether they are needed, or can be translated to lambda expressions.
 \end{itemize}
 \subsection{High Order Logic to Boolean-free HOL}
 \label{sec:hol_to_boolean_free}
@@ -325,6 +325,7 @@ thf('boolean_false_definition',type,(bool_false : boolean)).
 \end{verbatim}
 This translation assumes that functions of the logical operators (i.e. disjunctions, etc.) are as well translated if needed. Hence, when designing the relevance filter, we need to take this into account.
 \subsection{Boolean-free HOL to $\lambda$-free HOL}
+\href{http://matryoshka.gforge.inria.fr/pubs/lfhosup_paper.pdf}{Paper} \cite{LambdaFreeHOL}
 \subsection{$\lambda$-free HOL to FOL}
 \subsection{FOL to monomorphic FOL}
 \subsection{Open issues}

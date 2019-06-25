@@ -155,7 +155,7 @@ with hammer_c_aux : expr → ℕ → hammer_tactic holterm
       end
 
 | e@(expr.pi n n1 t _) depth := -- Dependent types
-  do sorry -- TODO: How to deal with pi expressions the best?
+  do sorry -- TODO: How to deal with pi expressions the best? Can we translate them into lambda expressions?
 
 | e@(expr.lam n b a c) depth := -- Lambda expression C_Γ(λx:τ.t)=Fy_0
   do  -- tactic.trace "Lambda at depth ",
@@ -213,8 +213,8 @@ with hammer_f_aux : expr → ℕ → hammer_tactic holform
             (s, _) ← body_of e,
             fe2 ← hammer_f_aux s depth,
             return $ holform.imp fe1 fe2
-      else
-        do  let vname := "V" ++ to_string depth,
+      else 
+        do  let vname := "V" ++ to_string depth, 
             vtype <- hammer_g_aux t depth, -- Type of variable
             fe2 ← hammer_f_aux s (depth+1),
             return $ holform.all vname vtype fe2
@@ -249,11 +249,7 @@ with hammer_f_aux : expr → ℕ → hammer_tactic holform
 meta def hammer_f (e : expr) : hammer_tactic holform := hammer_f_aux e 1
 meta def hammer_c (e : expr) : hammer_tactic holterm := hammer_c_aux e 1
 meta def hammer_g (e : expr) : hammer_tactic holtype := hammer_g_aux e 1
--- def add_type_constraint (n : name) (e : expr) : hammer_tactic unit :=
--- do
---   tp ← tactic.infer_type e,
---   type_expr ← hammer_g_aux tp 1,
---   add_axiom
+
 
 ---------------------
 -- DEBUG FUNCTIONS --
